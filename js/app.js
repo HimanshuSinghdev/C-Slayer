@@ -22,7 +22,7 @@
   // ---------------- editor ----------------
   const cm = CodeMirror.fromTextArea($('#code'), {
     mode: 'text/x-csrc', theme: 'slayer', lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false, smartIndent: true,
-    matchBrackets: true, autoCloseBrackets: { pairs: '()[]{}""\'\'', closeBefore: ')]}\'":;>,', triples: '', explode: '{}' }, styleActiveLine: false, lineWrapping: false, gutters: ['CodeMirror-linenumbers', 'bp', 'gut'],
+    matchBrackets: true, styleActiveLine: false, lineWrapping: false, gutters: ['CodeMirror-linenumbers', 'bp', 'gut'],
     extraKeys: {
       'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(), 'Ctrl-Space': (c) => window.CSlayerComplete.ctrlSpace(c),
       Tab: (c) => { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection('    ', 'end'); },
@@ -31,6 +31,47 @@
     inputStyle: 'contenteditable', autocorrect: false, autocapitalize: false, spellcheck: false
   });
   cm.setValue(files[cur].code);
+  window.CSlayerComplete.attach(cm);
+  // ---- auto-close brackets/quotes (works with Android keyboards, which don't send keypress events) ----
+  const OPEN = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" }, CLOSERS = ')]}"\'';
+  const isWord = (c) => /[\w]/.test(c || '');
+  function pairInput(c, ch) {
+    // ch: the single character just typed, cursor is right after it
+    const cur0 = c.getCursor(), line = c.getLine(cur0.line), prev = line.charAt(cur0.ch - 2), next = line.charAt(cur0.ch);
+    const quote = ch === '"' || ch === "'";
+    if (CLOSERS.indexOf(ch) >= 0 && !quote && next === ch) {
+      c.replaceRange('', { line: cur0.line, ch: cur0.ch - 1 }, cur0, '+pair'); c.setCursor({ line: cur0.line, ch: cur0.ch }); return true;
+    }
+    if (OPEN[ch] === undefined) return false;
+    if (quote && next === ch) { c.replaceRange('', { line: cur0.line, ch: cur0.ch - 1 }, cur0, '+pair'); c.setCursor({ line: cur0.line, ch: cur0.ch }); return true; }
+    if (quote && (isWord(prev) || (ch === "'" && /\d/.test(prev || '')))) return false;
+    if (next && /[\w\(\["']/.test(next) && !quote) return false;
+    if (quote && next && isWord(next)) return false;
+    c.replaceRange(OPEN[ch], cur0, cur0, '+pair'); c.setCursor(cur0);
+    return true;
+  }
+  cm.on('changes', (c, list) => {
+    if (list.length !== 1) return;
+    const ch = list[0];
+    if (ch.origin !== '+input' || c.somethingSelected() || ch.text.length > 2 || (ch.removed && ch.removed.join('').length)) return;
+    if (ch.text.length === 1 && ch.text[0].length === 1) { pairInput(c, ch.text[0]); return; }
+    if (ch.text.length === 2 && ch.text[0] === '' ) {   // Enter between { and }
+      const cu = c.getCursor(), ln = c.getLine(cu.line), up = c.getLine(cu.line - 1) || '';
+      if (up.replace(/\s+$/, '').slice(-1) === '{' && ln.trim().charAt(0) === '}') {
+        const base = up.match(/^\s*/)[0], mid = base + '    ';
+        c.operation(() => {
+          c.replaceRange(mid + '\n' + base, { line: cu.line, ch: 0 }, { line: cu.line, ch: ln.length - ln.trim().length }, '+pair');
+          c.setCursor({ line: cu.line, ch: mid.length });
+        });
+      }
+    }
+  });
+  // Backspace on an empty pair () [] {} "" '' removes both
+  cm.on('beforeChange', (c, ch) => {
+    if (ch.origin !== '+delete' || ch.from.line !== ch.to.line || ch.to.ch - ch.from.ch !== 1 || c.somethingSelected()) return;
+    const ln = c.getLine(ch.from.line), o = ln.charAt(ch.from.ch), n = ln.charAt(ch.to.ch);
+    if (OPEN[o] !== undefined && OPEN[o] === n) ch.update(ch.from, { line: ch.to.line, ch: ch.to.ch + 1 });
+  });
   window.CSlayerComplete.attach(cm);
   let saveT = 0;
   cm.on('change', () => {
@@ -333,11 +374,18 @@
   }
 
   // ---------------- symbol keys ----------------
-  const keys = ['Tab', '{', '}', '(', ')', '[', ']', ';', '*', '&', '"', "'", '<', '>', '=', '!', '|', '%', '\\', '#'];
+  const keys = ['Tab', '{', '}', '(', ')', '[', ']', ';', '"', "'", '*', '&', '<', '>', '=', '+', '-', '/', '!', '|', '%', ',', '.', '\\', '#', '_'];
   const kb = $('#keys');
   keys.forEach(k => { const b = document.createElement('button'); b.type = 'button'; b.textContent = k === 'Tab' ? '⇥' : k; b.setAttribute('aria-label', k);
     b.addEventListener('pointerdown', (e) => e.preventDefault());
-    b.addEventListener('click', () => { cm.focus(); cm.replaceSelection(k === 'Tab' ? '    ' : k, 'end'); }); kb.appendChild(b); });
+    b.addEventListener('click', () => { cm.focus(); if (k === 'Tab') { cm.replaceSelection('    ', 'end'); return; } if (cm.somethingSelected() && OPEN[k] !== undefined && k !== '"' ) { const t = cm.getSelection(); cm.replaceSelection(k + t + OPEN[k], 'around'); return; } cm.replaceSelection(k, 'end'); }); kb.appendChild(b); });
+
+  // keep the symbol bar above the on-screen keyboard
+  if (window.visualViewport) {
+    const vv = window.visualViewport, root = document.documentElement;
+    const fit = () => { root.style.setProperty('--vvh', Math.round(vv.height) + 'px'); if (window.scrollY) window.scrollTo(0, 0); cm.refresh(); };
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', () => { if (window.scrollY) window.scrollTo(0, 0); }); fit();
+  }
 
   // ---------------- boot ----------------
   renderFiles(); renderTests(); saveTests(); renderProblems([]); drawBp();

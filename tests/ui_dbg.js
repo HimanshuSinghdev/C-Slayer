@@ -4,7 +4,7 @@ const { chromium } = require('playwright');
   const errs = []; p.on('pageerror', e => errs.push(String(e))); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   await p.goto('http://localhost:8765/'); await p.waitForTimeout(800);
   await p.evaluate(() => { const cm = document.querySelector('.CodeMirror').CodeMirror; cm.setValue('#include <stdio.h>\nint f(int x){\n  int y = x * 2;\n  return y;\n}\nint main(void){\n  int a = f(3);\n  printf("%d\\n", a);\n  return 0;\n}\n'); });
-  await p.click('.CodeMirror-linenumber >> text=7');
+  await p.locator('.CodeMirror-linenumber:visible', { hasText: /^7$/ }).click();
   console.log('bp dots', await p.locator('.bp-dot').count());
   await p.click('#btnDebug'); await p.waitForTimeout(1200);
   console.log('curline', await p.locator('.cm-curline').count(), 'stack', await p.locator('.sframe').allInnerTexts());
