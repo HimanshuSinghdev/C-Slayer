@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<title>C-Slayer — C compiler &amp; grader</title>
+<meta name="description" content="Write, run and grade C programs in your browser. Memory-safe by design, scored 1–10.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/codemirror.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-state="idle">
+<header class="top">
+  <div class="brand"><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 26 L22 10 M22 10 l4-6 -6 4 M9 23 l-3 3 M12 20 l3 3" /></svg><span class="word">C<b>·</b>SLAYER</span></div>
+  <div class="actions">
+    <select id="samples" aria-label="Load a sample"><option value="">Samples…</option></select>
+    <button id="btnRun" class="btn primary" title="Compile and run (Ctrl+Enter)"><span class="ico">▶</span><span class="lbl">Run</span></button>
+    <button id="btnStop" class="btn danger" hidden title="Stop"><span class="ico">■</span><span class="lbl">Stop</span></button>
+    <button id="btnScore" class="btn ember" title="Grade this program 1–10"><span class="ico">★</span><span class="lbl">Score</span></button>
+  </div>
+</header>
+
+<nav class="files" aria-label="Files">
+  <select id="fileSel" aria-label="Current file"></select>
+  <button id="fNew" class="chip" title="New file">＋</button>
+  <button id="fRen" class="chip" title="Rename">✎</button>
+  <button id="fDel" class="chip" title="Delete">🗑</button>
+  <button id="fDl" class="chip" title="Download .c">⤓</button>
+  <button id="fUp" class="chip" title="Open a .c file">⤒</button>
+  <input id="fileIn" type="file" accept=".c,.h,.txt,text/plain" hidden>
+</nav>
+
+<main class="split">
+  <section class="pane editor" aria-label="Code editor"><textarea id="code" spellcheck="false"></textarea></section>
+  <section class="pane bottom" aria-label="Results">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="console" class="on">Console</button>
+      <button role="tab" data-tab="problems">Problems <i id="probCount" class="badge" hidden>0</i></button>
+      <button role="tab" data-tab="tests">Tests <i id="testCount" class="badge" hidden>0</i></button>
+      <button role="tab" data-tab="score">Score</button>
+    </div>
+    <div id="p-console" class="tabpane on">
+      <pre id="out" class="out" aria-live="polite"></pre>
+      <form id="inForm" class="inline-in" hidden autocomplete="off">
+        <span class="prompt">›</span><input id="inLine" type="text" inputmode="text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Program input">
+        <button class="chip" type="submit">Send</button><button class="chip" type="button" id="btnEof" title="End of input (Ctrl+D)">EOF</button>
+      </form>
+    </div>
+    <div id="p-problems" class="tabpane"><ul id="probList" class="problems"></ul><p id="probEmpty" class="empty">No problems. Run the program to check.</p></div>
+    <div id="p-tests" class="tabpane">
+      <p class="hint">Optional: add input/expected-output pairs. The grader runs your program on each and compares output (trailing spaces ignored).</p>
+      <div id="testList"></div>
+      <button id="addTest" class="btn ghost">＋ Add test case</button>
+      <details class="stdin"><summary>Standard input for the normal Run / Score</summary><textarea id="stdinText" rows="3" spellcheck="false" placeholder="Lines the program will read with scanf / fgets"></textarea></details>
+    </div>
+    <div id="p-score" class="tabpane"><div id="scoreBox"><p class="empty">Press <b>Score</b> to grade this program from 1 to 10.</p></div></div>
+  </section>
+</main>
+
+<div class="keys" id="keys" aria-label="Symbol keys"></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="vendor/codemirror.js"></script>
+<script src="vendor/clike.js"></script>
+<script src="js/samples.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
