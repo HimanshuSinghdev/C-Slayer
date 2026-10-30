@@ -38,7 +38,7 @@
       if (!isScalar(from) || !isScalar(to)) return;
       if (to.isBool) { if (!from.isBool) e1(OP.TOBOOL, cn(from)); return; }
       const fc = cn(from), tc = cn(to);
-      if (fc !== tc) e1(OP.CONV, fc * 8 + tc);
+      if (fc !== tc && !((fc === 0 || fc === 1) && tc === 2) && !(fc === 1 && tc === 3)) e1(OP.CONV, fc * 8 + tc);   // int/uint -> long (and uint -> ulong) keep the same value
       if (to.k === 'int' && to.size < 4) {
         let skip = false;
         if (from.k === 'int' && !from.isBool) {

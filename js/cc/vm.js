@@ -669,6 +669,13 @@
             break;
           }
           case 107 /*ADDLC*/: { const o = fp + code[pc]; dv.setInt32(o, (dv.getInt32(o, true) + code[pc + 1]) | 0, true); pc += 8; break; }
+          case 108 /*JCMP*/: {
+            b = S[--ssp]; a = S[--ssp];
+            let c;
+            switch (code[pc]) { case 0: c = a == b; break; case 1: c = a != b; break; case 2: c = a < b; break; case 3: c = a > b; break; case 4: c = a <= b; break; default: c = a >= b; }
+            if (c) pc += 2; else { pc = code[pc + 1]; if (--budget <= 0) { save(); return 'yield'; } }
+            break;
+          }
           default:
             save(); self.fail('internal', 'Internal error: bad instruction ' + code[pc - 1] + ' at ' + (pc - 1));
         }

@@ -33,7 +33,7 @@
     // memory blocks
     'MEMCPY', 'MEMZERO', 'ALLOCA', 'LINE', 'HALT',
     // fused (created only by the post-pass in compile.js; never emitted directly)
-    'JCLL', 'JCLC', 'ADDLC'
+    'JCLL', 'JCLC', 'ADDLC', 'JCMP'
   ];
   const OP = {};
   NAMES.forEach((n, i) => { OP[n] = i; });
@@ -44,6 +44,7 @@
   set(['ICONST', 'KCONST', 'LEAL', 'LOAD', 'STORE', 'STOREP', 'NEG', 'BNOT', 'LNOT', 'TOBOOL', 'CONV', 'NARROW', 'JMP', 'JZ', 'JNZ', 'SWITCH', 'CALLI', 'ENTER', 'MEMCPY', 'MEMZERO', 'ALLOCA', 'LINE'], 1);
   set(['LLOAD', 'LSTORE', 'LSTOREP', 'CALL', 'CALLB', 'ADDLC'], 2);
   set(['JCLL', 'JCLC'], 4);
+  set(['JCMP'], 2);
 
   const CLS = { I: 0, U: 1, L: 2, UL: 3, F: 4, D: 5 };
   const BINOP = { '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '%': 'MOD', '&': 'AND', '|': 'OR', '^': 'XOR', '<<': 'SHL', '>>': 'SHR' };
