@@ -21,15 +21,16 @@
   // ---------------- editor ----------------
   const cm = CodeMirror.fromTextArea($('#code'), {
     mode: 'text/x-csrc', theme: 'slayer', lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false, smartIndent: true,
-    matchBrackets: false, styleActiveLine: false, lineWrapping: false, gutters: ['CodeMirror-linenumbers', 'gut'],
+    matchBrackets: true, autoCloseBrackets: { pairs: '()[]{}""\'\'', closeBefore: ')]}\'":;>,', triples: '', explode: '{}' }, styleActiveLine: false, lineWrapping: false, gutters: ['CodeMirror-linenumbers', 'gut'],
     extraKeys: {
-      'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(),
+      'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(), 'Ctrl-Space': (c) => window.CSlayerComplete.ctrlSpace(c),
       Tab: (c) => { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection('    ', 'end'); },
       'Shift-Tab': (c) => c.indentSelection('subtract')
     },
     inputStyle: 'contenteditable', autocorrect: false, autocapitalize: false, spellcheck: false
   });
   cm.setValue(files[cur].code);
+  window.CSlayerComplete.attach(cm);
   let saveT = 0;
   cm.on('change', () => {
     files[cur].code = cm.getValue();
@@ -196,6 +197,7 @@
     ensureWorker().postMessage({ type: 'score', id: runId, src: cm.getValue(), stdin: stdinText, tests: tests.map(t => ({ name: t.name, input: t.input, expected: t.expected })) });
   };
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function creditEl() { const c = el('p', 'credit', 'Graded by C·Slayer · built by '); c.appendChild(el('b', '', 'Himanshu Singh')); return c; }
   function onScore(m) {
     if (m.id !== scoreId) return;
     $('#btnScore').disabled = false;
@@ -227,6 +229,7 @@
       }
       wrap.appendChild(d); requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = (part.max ? Math.round(part.got / part.max * 100) : 0) + '%'; }));
     }
+    wrap.appendChild(creditEl());
     box.appendChild(wrap);
     requestAnimationFrame(() => requestAnimationFrame(() => { fg.style.strokeDashoffset = String(326.7 * (1 - r.score / 10)); }));
     const t0 = performance.now();
@@ -243,6 +246,7 @@
 
   // ---------------- boot ----------------
   renderFiles(); renderTests(); saveTests(); renderProblems([]);
+  put('C·Slayer — a C compiler & grader by Himanshu Singh\nPress ▶ Run, or ★ Score to grade your code.\n\n', 'm');
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('service-worker.js').catch(() => { /* offline mode unavailable */ });
 })();
