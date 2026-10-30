@@ -27,6 +27,21 @@
   const hex = n => '0x' + (n >>> 0).toString(16);
   const I32_MIN = -2147483648;
   const I64_MIN = -(1n << 63n);
+  // 64-bit integers are JS numbers while |v| <= 2^53-1 (fast) and BigInts beyond that. Operations accept both forms.
+  const SAFE = 9007199254740991, SAFEN = 9007199254740991n;
+  const nI = (b) => (b >= -SAFEN && b <= SAFEN) ? Number(b) : b;
+  const big = (x) => typeof x === 'bigint' ? x : BigInt(x);
+  const wrapL = (b) => nI(BigInt.asIntN(64, b));
+  const wrapUL = (b) => nI(BigInt.asUintN(64, b));
+  function ld64(dv, a, signed) {
+    const lo = dv.getUint32(a, true);
+    if (signed) { const hi = dv.getInt32(a + 4, true); return (hi >= -2097152 && hi < 2097152) ? hi * 4294967296 + lo : dv.getBigInt64(a, true); }
+    const hi = dv.getUint32(a + 4, true); return hi < 2097152 ? hi * 4294967296 + lo : dv.getBigUint64(a, true);
+  }
+  function st64(dv, a, v) {
+    if (typeof v === 'number') { const hi = Math.floor(v / 4294967296); dv.setUint32(a, v - hi * 4294967296, true); dv.setInt32(a + 4, hi, true); }
+    else dv.setBigInt64(a, BigInt.asIntN(64, v), true);
+  }
 
   function f2i(v) { // float -> int32 the way x86 cvttsd2si does
     if (v !== v || v >= 2147483648 || v < -2147483648) return I32_MIN;
@@ -51,23 +66,23 @@
     switch (to) {
       case 0: // -> I
         if (from === 1) return v | 0;
-        if (from === 2 || from === 3) return Number(BigInt.asIntN(32, v));
+        if (from === 2 || from === 3) return typeof v === 'number' ? v | 0 : Number(BigInt.asIntN(32, v));
         if (from >= 4) return f2i(v);
         return v;
       case 1: // -> U / pointer
         if (from === 0) return v >>> 0;
-        if (from === 2 || from === 3) return Number(BigInt.asUintN(32, v));
+        if (from === 2 || from === 3) return typeof v === 'number' ? v >>> 0 : Number(BigInt.asUintN(32, v));
         if (from >= 4) return f2u(v);
         return v;
       case 2: // -> L
-        if (from <= 1) return BigInt(v);
-        if (from === 3) return BigInt.asIntN(64, v);
-        if (from >= 4) return f2l(v);
+        if (from <= 1) return v;
+        if (from === 3) return typeof v === 'number' ? v : wrapL(v);
+        if (from >= 4) return nI(f2l(v));
         return v;
       case 3: // -> UL
-        if (from <= 1) return BigInt.asUintN(64, BigInt(v));
-        if (from === 2) return BigInt.asUintN(64, v);
-        if (from >= 4) return f2ul(v);
+        if (from <= 1) return v >= 0 ? v : wrapUL(BigInt(v));
+        if (from === 2) return typeof v === 'number' ? (v >= 0 ? v : wrapUL(BigInt(v))) : wrapUL(v);
+        if (from >= 4) return nI(f2ul(v));
         return v;
       case 4: // -> F
         if (from === 2 || from === 3) return Math.fround(Number(v));
@@ -393,17 +408,17 @@
           case 7 /*LLOAD*/: {
             const k = code[pc++], ad = fp + code[pc++];
             switch (k) {
-              case 0: rd(ad, 1); S[ssp++] = dv.getInt8(ad); break;
-              case 1: rd(ad, 1); S[ssp++] = u8[ad]; break;
-              case 2: rd(ad, 2); S[ssp++] = dv.getInt16(ad, true); break;
-              case 3: rd(ad, 2); S[ssp++] = dv.getUint16(ad, true); break;
-              case 4: rd(ad, 4); S[ssp++] = dv.getInt32(ad, true); break;
-              case 5: rd(ad, 4); S[ssp++] = dv.getUint32(ad, true); break;
-              case 6: rd(ad, 8); S[ssp++] = dv.getBigInt64(ad, true); break;
-              case 7: rd(ad, 8); S[ssp++] = dv.getBigUint64(ad, true); break;
-              case 8: rd(ad, 4); S[ssp++] = dv.getFloat32(ad, true); break;
-              case 9: rd(ad, 8); S[ssp++] = dv.getFloat64(ad, true); break;
-              default: rd(ad, 8); S[ssp++] = dv.getUint32(ad, true);
+              case 0: S[ssp++] = dv.getInt8(ad); break;
+              case 1: S[ssp++] = u8[ad]; break;
+              case 2: S[ssp++] = dv.getInt16(ad, true); break;
+              case 3: S[ssp++] = dv.getUint16(ad, true); break;
+              case 4: S[ssp++] = dv.getInt32(ad, true); break;
+              case 5: S[ssp++] = dv.getUint32(ad, true); break;
+              case 6: S[ssp++] = ld64(dv, ad, true); break;
+              case 7: S[ssp++] = ld64(dv, ad, false); break;
+              case 8: S[ssp++] = dv.getFloat32(ad, true); break;
+              case 9: S[ssp++] = dv.getFloat64(ad, true); break;
+              default: S[ssp++] = dv.getUint32(ad, true);
             }
             break;
           }
@@ -412,13 +427,13 @@
             const k = code[pc++], ad = fp + code[pc++];
             v = S[--ssp];
             switch (k) {
-              case 0: case 1: wr(ad, 1); u8[ad] = v; break;
-              case 2: case 3: wr(ad, 2); dv.setInt16(ad, v, true); break;
-              case 4: case 5: wr(ad, 4); dv.setInt32(ad, v, true); break;
-              case 6: case 7: wr(ad, 8); dv.setBigInt64(ad, BigInt.asIntN(64, v), true); break;
-              case 8: wr(ad, 4); dv.setFloat32(ad, v, true); break;
-              case 9: wr(ad, 8); dv.setFloat64(ad, v, true); break;
-              default: wr(ad, 8); dv.setUint32(ad, v, true); dv.setUint32(ad + 4, 0, true);
+              case 0: case 1: u8[ad] = v; break;
+              case 2: case 3: dv.setInt16(ad, v, true); break;
+              case 4: case 5: dv.setInt32(ad, v, true); break;
+              case 6: case 7: st64(dv, ad, v); break;
+              case 8: dv.setFloat32(ad, v, true); break;
+              case 9: dv.setFloat64(ad, v, true); break;
+              default: dv.setUint32(ad, v, true); dv.setUint32(ad + 4, 0, true);
             }
             if (keep) S[ssp++] = v;
             break;
@@ -432,8 +447,8 @@
               case 3: rd(a, 2); S[ssp - 1] = dv.getUint16(a, true); break;
               case 4: rd(a, 4); S[ssp - 1] = dv.getInt32(a, true); break;
               case 5: rd(a, 4); S[ssp - 1] = dv.getUint32(a, true); break;
-              case 6: rd(a, 8); S[ssp - 1] = dv.getBigInt64(a, true); break;
-              case 7: rd(a, 8); S[ssp - 1] = dv.getBigUint64(a, true); break;
+              case 6: rd(a, 8); S[ssp - 1] = ld64(dv, a, true); break;
+              case 7: rd(a, 8); S[ssp - 1] = ld64(dv, a, false); break;
               case 8: rd(a, 4); S[ssp - 1] = dv.getFloat32(a, true); break;
               case 9: rd(a, 8); S[ssp - 1] = dv.getFloat64(a, true); break;
               default: rd(a, 8); S[ssp - 1] = dv.getUint32(a, true);
@@ -448,7 +463,7 @@
               case 0: case 1: wr(a, 1); u8[a] = v; break;
               case 2: case 3: wr(a, 2); dv.setInt16(a, v, true); break;
               case 4: case 5: wr(a, 4); dv.setInt32(a, v, true); break;
-              case 6: case 7: wr(a, 8); dv.setBigInt64(a, BigInt.asIntN(64, v), true); break;
+              case 6: case 7: wr(a, 8); st64(dv, a, v); break;
               case 8: wr(a, 4); dv.setFloat32(a, v, true); break;
               case 9: wr(a, 8); dv.setFloat64(a, v, true); break;
               default: wr(a, 8); dv.setUint32(a, v, true); dv.setUint32(a + 4, 0, true);
@@ -480,28 +495,47 @@
           case 31 /*SHL_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] << S[ssp]) >>> 0; break;
           case 32 /*SHR_U*/: ssp--; S[ssp - 1] = S[ssp - 1] >>> S[ssp]; break;
           // ---- int64 ----
-          case 33 /*ADD_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] + S[ssp]); break;
-          case 34 /*SUB_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] - S[ssp]); break;
-          case 35 /*MUL_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] * S[ssp]); break;
-          case 36 /*DIV_L*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0n || (b === -1n && a === I64_MIN)) { save(); divz(); } S[ssp - 1] = a / b; break;
-          case 37 /*MOD_L*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0n || (b === -1n && a === I64_MIN)) { save(); divz(); } S[ssp - 1] = a % b; break;
-          case 38 /*AND_L*/: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
-          case 39 /*OR_L*/: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
-          case 40 /*XOR_L*/: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
-          case 41 /*SHL_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] << (S[ssp] & 63n)); break;
-          case 42 /*SHR_L*/: ssp--; S[ssp - 1] = S[ssp - 1] >> (S[ssp] & 63n); break;
-          // ---- uint64 ----
-          case 43 /*ADD_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] + S[ssp]); break;
-          case 44 /*SUB_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] - S[ssp]); break;
-          case 45 /*MUL_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] * S[ssp]); break;
-          case 46 /*DIV_UL*/: ssp--; b = S[ssp]; if (b === 0n) { save(); divz(); } S[ssp - 1] = S[ssp - 1] / b; break;
-          case 47 /*MOD_UL*/: ssp--; b = S[ssp]; if (b === 0n) { save(); divz(); } S[ssp - 1] = S[ssp - 1] % b; break;
-          case 48 /*AND_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
-          case 49 /*OR_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
-          case 50 /*XOR_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
-          case 51 /*SHL_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] << (S[ssp] & 63n)); break;
-          case 52 /*SHR_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] >> (S[ssp] & 63n); break;
-          // ---- float / double ----
+          case 33 /*ADD_L*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; if (typeof a === 'number' && typeof b === 'number') { v = a + b; if (v <= SAFE && v >= -SAFE) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapL(big(a) + big(b)); break; }
+          case 34 /*SUB_L*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; if (typeof a === 'number' && typeof b === 'number') { v = a - b; if (v <= SAFE && v >= -SAFE) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapL(big(a) - big(b)); break; }
+          case 35 /*MUL_L*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; if (typeof a === 'number' && typeof b === 'number') { v = a * b; if (v <= SAFE && v >= -SAFE) { S[ssp - 1] = v + 0; break; } } S[ssp - 1] = wrapL(big(a) * big(b)); break; }
+          case 36 /*DIV_L*/: {
+            ssp--; b = S[ssp]; a = S[ssp - 1];
+            if (typeof a === 'number' && typeof b === 'number') { if (b === 0) { save(); divz(); } S[ssp - 1] = (a - a % b) / b + 0; break; }
+            { const bb = big(b), aa = big(a); if (bb === 0n || (bb === -1n && aa === I64_MIN)) { save(); divz(); } S[ssp - 1] = nI(aa / bb); }
+            break;
+          }
+          case 37 /*MOD_L*/: {
+            ssp--; b = S[ssp]; a = S[ssp - 1];
+            if (typeof a === 'number' && typeof b === 'number') { if (b === 0) { save(); divz(); } S[ssp - 1] = a % b + 0; break; }
+            { const bb = big(b), aa = big(a); if (bb === 0n || (bb === -1n && aa === I64_MIN)) { save(); divz(); } S[ssp - 1] = nI(aa % bb); }
+            break;
+          }
+          case 38 /*AND_L*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; S[ssp - 1] = (typeof a === 'number' && typeof b === 'number' && (a | 0) === a && (b | 0) === b) ? a & b : nI(big(a) & big(b)); break; }
+          case 39 /*OR_L*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; S[ssp - 1] = (typeof a === 'number' && typeof b === 'number' && (a | 0) === a && (b | 0) === b) ? a | b : nI(big(a) | big(b)); break; }
+          case 40 /*XOR_L*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; S[ssp - 1] = (typeof a === 'number' && typeof b === 'number' && (a | 0) === a && (b | 0) === b) ? a ^ b : nI(big(a) ^ big(b)); break; }
+          case 41 /*SHL_L*/: { ssp--; const sh = Number(b = S[ssp]) & 63; a = S[ssp - 1]; if (typeof a === 'number') { v = a * Math.pow(2, sh); if (v <= SAFE && v >= -SAFE) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapL(big(a) << BigInt(sh)); break; }
+          case 42 /*SHR_L*/: { ssp--; const sh = Number(S[ssp]) & 63; a = S[ssp - 1]; S[ssp - 1] = typeof a === 'number' ? Math.floor(a / Math.pow(2, sh)) : nI(a >> BigInt(sh)); break; }
+
+          case 43 /*ADD_UL*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; if (typeof a === 'number' && typeof b === 'number') { v = a + b; if (v <= SAFE) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapUL(big(a) + big(b)); break; }
+          case 44 /*SUB_UL*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; if (typeof a === 'number' && typeof b === 'number') { v = a - b; if (v >= 0) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapUL(big(a) - big(b)); break; }
+          case 45 /*MUL_UL*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; if (typeof a === 'number' && typeof b === 'number') { v = a * b; if (v <= SAFE) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapUL(big(a) * big(b)); break; }
+          case 46 /*DIV_UL*/: {
+            ssp--; b = S[ssp]; a = S[ssp - 1];
+            if (typeof a === 'number' && typeof b === 'number') { if (b === 0) { save(); divz(); } S[ssp - 1] = (a - a % b) / b; break; }
+            { const bb = big(b); if (bb === 0n) { save(); divz(); } S[ssp - 1] = nI(big(a) / bb); }
+            break;
+          }
+          case 47 /*MOD_UL*/: {
+            ssp--; b = S[ssp]; a = S[ssp - 1];
+            if (typeof a === 'number' && typeof b === 'number') { if (b === 0) { save(); divz(); } S[ssp - 1] = a % b; break; }
+            { const bb = big(b); if (bb === 0n) { save(); divz(); } S[ssp - 1] = nI(big(a) % bb); }
+            break;
+          }
+          case 48 /*AND_UL*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; S[ssp - 1] = (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a & b : nI(big(a) & big(b)); break; }
+          case 49 /*OR_UL*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; S[ssp - 1] = (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a | b : nI(big(a) | big(b)); break; }
+          case 50 /*XOR_UL*/: { ssp--; a = S[ssp - 1]; b = S[ssp]; S[ssp - 1] = (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a ^ b : nI(big(a) ^ big(b)); break; }
+          case 51 /*SHL_UL*/: { ssp--; const sh = Number(S[ssp]) & 63; a = S[ssp - 1]; if (typeof a === 'number') { v = a * Math.pow(2, sh); if (v <= SAFE) { S[ssp - 1] = v; break; } } S[ssp - 1] = wrapUL(big(a) << BigInt(sh)); break; }
+          case 52 /*SHR_UL*/: { ssp--; const sh = Number(S[ssp]) & 63; a = S[ssp - 1]; S[ssp - 1] = typeof a === 'number' ? Math.floor(a / Math.pow(2, sh)) : nI(a >> BigInt(sh)); break; }
           case 53 /*ADD_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] + S[ssp]); break;
           case 54 /*SUB_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] - S[ssp]); break;
           case 55 /*MUL_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] * S[ssp]); break;
@@ -511,8 +545,10 @@
           case 59 /*MUL_D*/: ssp--; S[ssp - 1] = S[ssp - 1] * S[ssp]; break;
           case 60 /*DIV_D*/: ssp--; S[ssp - 1] = S[ssp - 1] / S[ssp]; break;
           // ---- comparisons (numbers and BigInts both work with JS relational operators) ----
-          case 61 /*EQ_I*/: case 67 /*EQ_U*/: case 73 /*EQ_L*/: case 79 /*EQ_F*/: ssp--; S[ssp - 1] = S[ssp - 1] === S[ssp] ? 1 : 0; break;
-          case 62 /*NE_I*/: case 68 /*NE_U*/: case 74 /*NE_L*/: case 80 /*NE_F*/: ssp--; S[ssp - 1] = S[ssp - 1] !== S[ssp] ? 1 : 0; break;
+          case 61 /*EQ_I*/: case 67 /*EQ_U*/: case 79 /*EQ_F*/: ssp--; S[ssp - 1] = S[ssp - 1] === S[ssp] ? 1 : 0; break;
+          case 73 /*EQ_L*/: ssp--; S[ssp - 1] = S[ssp - 1] == S[ssp] ? 1 : 0; break;
+          case 62 /*NE_I*/: case 68 /*NE_U*/: case 80 /*NE_F*/: ssp--; S[ssp - 1] = S[ssp - 1] !== S[ssp] ? 1 : 0; break;
+          case 74 /*NE_L*/: ssp--; S[ssp - 1] = S[ssp - 1] != S[ssp] ? 1 : 0; break;
           case 63 /*LT_I*/: case 69 /*LT_U*/: case 75 /*LT_L*/: case 81 /*LT_F*/: ssp--; S[ssp - 1] = S[ssp - 1] < S[ssp] ? 1 : 0; break;
           case 64 /*GT_I*/: case 70 /*GT_U*/: case 76 /*GT_L*/: case 82 /*GT_F*/: ssp--; S[ssp - 1] = S[ssp - 1] > S[ssp] ? 1 : 0; break;
           case 65 /*LE_I*/: case 71 /*LE_U*/: case 77 /*LE_L*/: case 83 /*LE_F*/: ssp--; S[ssp - 1] = S[ssp - 1] <= S[ssp] ? 1 : 0; break;
@@ -521,16 +557,16 @@
           // ---- unary / conversions ----
           case 85 /*NEG*/: {
             const c = code[pc++]; a = S[ssp - 1];
-            S[ssp - 1] = c === 0 ? (-a) | 0 : c === 1 ? (-a) >>> 0 : c === 2 ? BigInt.asIntN(64, -a) : c === 3 ? BigInt.asUintN(64, -a) : c === 4 ? Math.fround(-a) : -a;
+            S[ssp - 1] = c === 0 ? (-a) | 0 : c === 1 ? (-a) >>> 0 : c === 2 ? (typeof a === 'number' ? -a + 0 : wrapL(-a)) : c === 3 ? (a == 0 ? 0 : wrapUL(-big(a))) : c === 4 ? Math.fround(-a) : -a;
             break;
           }
           case 86 /*BNOT*/: {
             const c = code[pc++]; a = S[ssp - 1];
-            S[ssp - 1] = c === 0 ? ~a : c === 1 ? (~a) >>> 0 : c === 2 ? ~a : BigInt.asUintN(64, ~a);
+            S[ssp - 1] = c === 0 ? ~a : c === 1 ? (~a) >>> 0 : c === 2 ? (typeof a === 'number' ? -a - 1 : nI(~a)) : wrapUL(~big(a));
             break;
           }
-          case 87 /*LNOT*/: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = (c === 2 || c === 3) ? (a === 0n ? 1 : 0) : (a === 0 ? 1 : 0); break; }
-          case 88 /*TOBOOL*/: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = (c === 2 || c === 3) ? (a !== 0n ? 1 : 0) : (a !== 0 ? 1 : 0); break; }
+          case 87 /*LNOT*/: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = a == 0 ? 1 : 0; break; }
+          case 88 /*TOBOOL*/: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = a != 0 ? 1 : 0; break; }
           case 89 /*CONV*/: S[ssp - 1] = conv(S[ssp - 1], code[pc++]); break;
           case 90 /*NARROW*/: {
             const k = code[pc++]; a = S[ssp - 1];
@@ -542,7 +578,7 @@
           case 91 /*JMP*/: pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } break;
           case 92 /*JZ*/: if (S[--ssp] === 0) { pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } } else pc++; break;
           case 93 /*JNZ*/: if (S[--ssp] !== 0) { pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } } else pc++; break;
-          case 94 /*SWITCH*/: { const t = consts[code[pc++]]; v = S[--ssp]; const d = t.map.get(v); pc = d === undefined ? t.def : d; break; }
+          case 94 /*SWITCH*/: { const t = consts[code[pc++]]; v = S[--ssp]; if (typeof v === 'bigint') v = nI(v); const d = t.map.get(v); pc = d === undefined ? t.def : d; break; }
           case 98 /*ENTER*/: {
             const fs = code[pc++];
             if (frames.length >= this.maxFrames) { save(); self.fail('stack-overflow', 'Stack overflow: too many nested function calls (infinite recursion?)'); }
@@ -617,6 +653,22 @@
           }
           case 103 /*LINE*/: pc++; break;
           case 104 /*HALT*/: { v = S[--ssp]; save(); this.exitCode = typeof v === 'bigint' ? Number(BigInt.asIntN(32, v)) : v | 0; this.done = true; return 'done'; }
+          // ---- fused instructions (see peephole() in compile.js). Frame scalars never overlap redzones, so no checks. ----
+          case 105 /*JCLL*/: {
+            const x = dv.getInt32(fp + code[pc + 1], true), y = dv.getInt32(fp + code[pc + 2], true);
+            let c;
+            switch (code[pc]) { case 0: c = x === y; break; case 1: c = x !== y; break; case 2: c = x < y; break; case 3: c = x > y; break; case 4: c = x <= y; break; default: c = x >= y; }
+            if (c) pc += 8; else { pc = code[pc + 3]; if (--budget <= 0) { save(); return 'yield'; } }
+            break;
+          }
+          case 106 /*JCLC*/: {
+            const x = dv.getInt32(fp + code[pc + 1], true), y = code[pc + 2];
+            let c;
+            switch (code[pc]) { case 0: c = x === y; break; case 1: c = x !== y; break; case 2: c = x < y; break; case 3: c = x > y; break; case 4: c = x <= y; break; default: c = x >= y; }
+            if (c) pc += 7; else { pc = code[pc + 3]; if (--budget <= 0) { save(); return 'yield'; } }
+            break;
+          }
+          case 107 /*ADDLC*/: { const o = fp + code[pc]; dv.setInt32(o, (dv.getInt32(o, true) + code[pc + 1]) | 0, true); pc += 8; break; }
           default:
             save(); self.fail('internal', 'Internal error: bad instruction ' + code[pc - 1] + ' at ' + (pc - 1));
         }

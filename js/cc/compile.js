@@ -160,6 +160,52 @@
     if (!C.mainSym) C.error({ line: 1 }, "undefined reference to 'main' (every C program needs a main function)");
   }
 
+
+  /** Fuses hot instruction sequences in place (same length, padding is never executed):
+   *    LLOAD a; LLOAD b; CMP; JZ t   -> JCLL cmp,a,b,t      LLOAD a; ICONST c; CMP; JZ t -> JCLC cmp,a,c,t
+   *    LLOAD a; ICONST c; ADD|SUB; LSTOREP a -> ADDLC a,+-c
+   *  Only int32 locals; skipped if any jump lands inside the fused region. */
+  function peephole(C) {
+    const code = C.code, n = code.length, ARGS = CC.OPARGS;
+    const targets = new Set();
+    for (const f of C.funcs) if (f && typeof f.entry === 'number') targets.add(f.entry);
+    for (const k of C.consts) if (k && typeof k === 'object' && k.map instanceof Map) { for (const v of k.map.values()) targets.add(v); targets.add(k.def); }
+    const starts = [];
+    for (let pc = 0; pc < n;) {
+      const op = code[pc]; starts.push(pc);
+      if (op === OP.JMP || op === OP.JZ || op === OP.JNZ) targets.add(code[pc + 1]);
+      if (ARGS[op] === undefined) return;        // unknown op: leave the program alone
+      pc += 1 + ARGS[op];
+    }
+    const CMPS = [[OP.EQ_I, 0], [OP.NE_I, 1], [OP.LT_I, 2], [OP.GT_I, 3], [OP.LE_I, 4], [OP.GE_I, 5]];
+    const cmpKind = (op) => { for (const c of CMPS) if (c[0] === op) return c[1]; return -1; };
+    const free = (from, to) => { for (let p = from + 1; p < to; p++) if (targets.has(p)) return false; return true; };
+    for (const pc of starts) {
+      if (code[pc] === OP.LLOAD && code[pc + 1] === 4) {
+        const a = code[pc + 2];
+        // LLOAD a; LLOAD b; CMP; JZ
+        if (code[pc + 3] === OP.LLOAD && code[pc + 4] === 4) {
+          const k = cmpKind(code[pc + 6]);
+          if (k >= 0 && code[pc + 7] === OP.JZ && free(pc, pc + 9)) {
+            code[pc] = OP.JCLL; code[pc + 1] = k; code[pc + 2] = a; code[pc + 3] = code[pc + 5]; code[pc + 4] = code[pc + 8];
+            continue;
+          }
+        }
+        if (code[pc + 3] === OP.ICONST) {
+          const c = code[pc + 4], k = cmpKind(code[pc + 5]);
+          if (k >= 0 && code[pc + 6] === OP.JZ && free(pc, pc + 8)) {
+            code[pc] = OP.JCLC; code[pc + 1] = k; code[pc + 2] = a; code[pc + 3] = c; code[pc + 4] = code[pc + 7];
+            continue;
+          }
+          if ((code[pc + 5] === OP.ADD_I || code[pc + 5] === OP.SUB_I) && code[pc + 6] === OP.LSTOREP && code[pc + 7] === 4 && code[pc + 8] === a && free(pc, pc + 9)) {
+            code[pc] = OP.ADDLC; code[pc + 1] = a; code[pc + 2] = code[pc + 5] === OP.ADD_I ? c : (-c | 0);
+            continue;
+          }
+        }
+      }
+    }
+  }
+
   function assemble(C) {
     // argv / envp live in read-only memory
     const progName = C.internString([97, 46, 111, 117, 116]);
@@ -190,6 +236,7 @@
     const symAddr = new Map();
     for (const [name, s] of C.scopes[0]) if (s.kind === 'var') symAddr.set(name, s.addr);
     const gdata = Uint8Array.from(C.gdata);
+    if (!C.noOpt) peephole(C);
     return {
       code: Int32Array.from(C.code), lines: Int32Array.from(C.lines), consts: C.consts,
       funcs: C.funcs, builtins: C.builtinList, rodata: Uint8Array.from(C.rodata), gdata,

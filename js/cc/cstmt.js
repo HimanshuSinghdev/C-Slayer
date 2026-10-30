@@ -498,7 +498,7 @@
       if (hi - lo > 4096n) { C.error(s, 'case range is too large'); return; }
       for (let v = lo; v <= hi; v++) {
         const w = T.wrap(v, ctx.pt);
-        const key = ctx.wide ? w : Number(w);
+        const key = ctx.wide ? ((w >= -9007199254740991n && w <= 9007199254740991n) ? Number(w) : w) : Number(w);
         if (ctx.tbl.map.has(key)) { C.error(s, 'duplicate case value'); continue; }
         ctx.tbl.map.set(key, here);
       }

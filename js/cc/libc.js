@@ -590,8 +590,8 @@
   def('strtod', (vm, a) => parseDbl(vm, num(a[0]), num(a[1])));
   def('strtof', (vm, a) => Math.fround(parseDbl(vm, num(a[0]), num(a[1]))));
   def('abs', (vm, a) => { const x = a[0]; return x === -2147483648 ? x : Math.abs(x); });
-  def('labs', (vm, a) => { const x = a[0]; return x < 0n ? BigInt.asIntN(64, -x) : x; });
-  def('llabs', (vm, a) => { const x = a[0]; return x < 0n ? BigInt.asIntN(64, -x) : x; });
+  def('labs', (vm, a) => { const x = big(a[0]); return x < 0n ? BigInt.asIntN(64, -x) : x; });
+  def('llabs', (vm, a) => { const x = big(a[0]); return x < 0n ? BigInt.asIntN(64, -x) : x; });
   // glibc-compatible rand() (TYPE_3 additive feedback generator)
   function seedRand(vm, seed) {
     seed = seed >>> 0; if (seed === 0) seed = 1;

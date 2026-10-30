@@ -6,6 +6,7 @@
   'use strict';
   const CC = g.CC = g.CC || {};
   const T = CC.T, OP = CC.OP, MEM = CC.MEM;
+  const normL = (b) => (b >= -9007199254740991n && b <= 9007199254740991n) ? Number(b) : b;
 
   CC.installExpr = function (C) {
     const cn = (t) => { const c = T.cls(t); return c === 'I' ? 0 : c === 'U' || c === 'P' ? 1 : c === 'L' ? 2 : c === 'UL' ? 3 : c === 'F' ? 4 : 5; };
@@ -24,8 +25,8 @@
       const c = cn(t);
       if (c === 0) { e1(OP.ICONST, Number(BigInt.asIntN(32, BigInt(v)))); return; }
       if (c === 1) { const n = Number(BigInt.asUintN(32, BigInt(v))); if (n < 0x7fffffff) e1(OP.ICONST, n); else e1(OP.KCONST, C.konst(n)); return; }
-      if (c === 2) { e1(OP.KCONST, C.konst(BigInt.asIntN(64, BigInt(v)))); return; }
-      if (c === 3) { e1(OP.KCONST, C.konst(BigInt.asUintN(64, BigInt(v)))); return; }
+      if (c === 2) { e1(OP.KCONST, C.konst(normL(BigInt.asIntN(64, BigInt(v))))); return; }
+      if (c === 3) { e1(OP.KCONST, C.konst(normL(BigInt.asUintN(64, BigInt(v))))); return; }
       e1(OP.KCONST, C.konst(c === 4 ? Math.fround(Number(v)) : Number(v)));
     };
     C.pushInt = function (n) { e1(OP.ICONST, n | 0); };
@@ -654,20 +655,22 @@
       }
       const lt0 = C.staticTypeOf(lhs);
       if (lt0 && lt0.c) C.error(e, 'assignment of read-only ' + (lhs.k === 'Id' ? "variable '" + lhs.name + "'" : 'location'));
-      const t = C.lv(lhs);
+      const fastLocal = !!(isVar && sym.storage === 'local' && !sym.indirect && lt0 && isScalar(lt0));
+      const t = fastLocal ? lt0 : C.lv(lhs);
       if (!isScalar(t)) { C.error(e, "invalid operands to binary " + op); e1(OP.POP); C.rv(e.r); e1(OP.POP); if (!discard) C.pushInt(0); return t; }
-      e1(OP.DUP); C.emitLoad(t);                         // [addr, cur]
+      const finish = () => { if (fastLocal) e1(discard ? OP.LSTOREP : OP.LSTORE, T.kindOf(t), sym.off); else C.emitStore(t, !discard); };
+      if (fastLocal) e1(OP.LLOAD, T.kindOf(t), sym.off); else { e1(OP.DUP); C.emitLoad(t); }   // [addr, cur] or [cur]
       const rt = C.rv(e.r);                               // [addr, cur, rhs]
       let res;
       if (t.k === 'ptr' && (op === '+' || op === '-')) {
         if (rt.k !== 'int') { C.error(e, 'invalid operands to binary ' + op); e1(OP.POP); e1(OP.POP); res = t; }
         else { C.toIndex(rt); C.scaleIndex(t.to.k === 'void' ? T.char : t.to); e1(op === '+' ? OP.ADD_U : OP.SUB_U); res = t; }
-        C.emitStore(t, !discard);
+        finish();
         return T.unqual(t);
       }
       res = C.binaryTail(e, op, t, rt);              // [addr, result of type res]
       C.convert(res, t);
-      C.emitStore(t, !discard);
+      finish();
       return T.unqual(t);
     };
 
