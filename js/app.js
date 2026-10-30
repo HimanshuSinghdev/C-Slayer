@@ -125,11 +125,12 @@
   }
   function finish() { $('#btnRun').hidden = false; $('#btnStop').hidden = true; $('#inForm').hidden = true; $('#btnScore').disabled = false; }
 
+  function otherFiles() { const o = {}; files.forEach((f, i) => { if (i !== cur) o[f.name] = f.code; }); return o; }
   function run() {
     if (!$('#btnStop').hidden) return;
     resetOutput(); showTab('console'); setState('running'); clearMarks();
     $('#btnRun').hidden = true; $('#btnStop').hidden = false; $('#btnScore').disabled = true;
-    runId++; ensureWorker().postMessage({ type: 'run', id: runId, src: cm.getValue(), limits });
+    runId++; ensureWorker().postMessage({ type: 'run', id: runId, src: cm.getValue(), limits, files: otherFiles() });
   }
   function stop() { if (worker) worker.postMessage({ type: 'stop', id: runId }); }
   $('#btnRun').onclick = run; $('#btnStop').onclick = stop;
@@ -201,7 +202,7 @@
     $('#btnScore').disabled = true; setState('running'); showTab('score');
     const box = $('#scoreBox'); box.textContent = ''; const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'Compiling, running and grading…'; box.appendChild(p);
     runId++; scoreId = runId;
-    ensureWorker().postMessage({ type: 'score', id: runId, src: cm.getValue(), stdin: stdinText, limits, tests: tests.map(t => ({ name: t.name, input: t.input, expected: t.expected })) });
+    ensureWorker().postMessage({ type: 'score', id: runId, src: cm.getValue(), stdin: stdinText, limits, files: otherFiles(), tests: tests.map(t => ({ name: t.name, input: t.input, expected: t.expected })) });
   };
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function creditEl() { const c = el('p', 'credit', 'Graded by C·Slayer · built by '); c.appendChild(el('b', '', 'Himanshu Singh')); return c; }

@@ -675,6 +675,14 @@
     };
 
     // ---------- calls ----------
+    function hasSideEffect(n) {
+      if (!n || typeof n !== 'object') return false;
+      if (Array.isArray(n)) return n.some(hasSideEffect);
+      if (n.k === 'Assign' || n.k === 'Post' || n.k === 'Call' || (n.k === 'Un' && (n.op === '++' || n.op === '--'))) return true;
+      if (n.k === 'SizeofE' || n.k === 'SizeofT') return false;
+      for (const key of Object.keys(n)) { if (key === 'spec' || key === 'bytes') continue; const v = n[key]; if (v && typeof v === 'object' && hasSideEffect(v)) return true; }
+      return false;
+    }
     C.genCall = function (e) {
       const callee = stripParen(e.f);
       let sym = null, ftype = null, direct = false, name = null;
@@ -705,11 +713,44 @@
       }
       let argc = 0;
       const argTypes = [];
+      // user-defined variadic functions receive the extra arguments in a caller-side buffer (8-byte slots) via a hidden last parameter
+      const userVariadic = !!ftype.variadic && !(direct && sym && CC.libc.isBuiltin(sym.name));
+      let vaArea = -1;
       const retStruct = ftype.ret.k === 'struct';
       if (retStruct) {
         const tmp = C.allocFrame(Math.max(T.sizeOf(ftype.ret), 1), Math.max(T.alignOf(ftype.ret), 1));
         e1(OP.LEAL, tmp); argc++;
       }
+      // gcc evaluates call arguments right to left. Programs like printf("%d %d", i++, i++) depend on it, so when an
+      // argument has side effects we do the same (evaluate last-to-first into temporaries, then push in order).
+      if (e.args.length >= 2 && !userVariadic && !params.some(p => p.k === 'struct') && e.args.some(hasSideEffect)) {
+        // like gcc: arguments with side effects run first (last to first); plain reads happen afterwards
+        const evalArg = (i) => {      // leaves the converted value on the stack and returns its memory kind
+          const a = e.args[i];
+          const at = C.rv(a);
+          argTypes[i] = at;
+          if (i < params.length) {
+            if (C.checkAssign(params[i], at, a, { kind: 'arg', n: i + 1, fname })) C.convert(at, params[i]);
+            return T.kindOf(params[i]);
+          }
+          if (at.k === 'struct') { C.error(a, 'passing a struct to a variadic function is not supported'); return 6; }
+          if (at.k === 'void') { C.error(a, 'void value not ignored as it ought to be'); return 6; }
+          if (at.k === 'int') { const pr = T.promote(at); C.convert(at, pr); return T.kindOf(pr); }
+          return at.k === 'float' ? 9 : 10;
+        };
+        const slots = [];
+        for (let i = e.args.length - 1; i >= 0; i--) {
+          if (!hasSideEffect(e.args[i])) continue;
+          const kind = evalArg(i);
+          const off = C.allocFrame(8, 8);
+          e1(OP.LSTOREP, kind, off);
+          slots[i] = { kind, off };
+        }
+        for (let i = 0; i < e.args.length; i++) {
+          if (slots[i]) e1(OP.LLOAD, slots[i].kind, slots[i].off); else evalArg(i);
+          argc++;
+        }
+      } else
       for (let i = 0; i < e.args.length; i++) {
         const a = e.args[i];
         if (i < params.length) {
@@ -726,6 +767,19 @@
             argTypes.push(at);
             if (C.checkAssign(pt, at, a, { kind: 'arg', n: i + 1, fname })) C.convert(at, pt);
           }
+        } else if (userVariadic) {
+          if (vaArea < 0) vaArea = C.allocFrame(8 * Math.max(1, e.args.length - params.length), 8);
+          e1(OP.LEAL, vaArea + 8 * (i - params.length));
+          const at = C.rv(a);
+          argTypes.push(at);
+          let kind = 6;
+          if (at.k === 'struct') { C.error(a, 'passing a struct to a variadic function is not supported'); e1(OP.POP); e1(OP.POP); continue; }
+          else if (at.k === 'void') { C.error(a, 'void value not ignored as it ought to be'); e1(OP.POP); e1(OP.POP); continue; }
+          else if (at.k === 'int') C.convert(at, T.promote(at));
+          else if (at.k === 'float') kind = 9;
+          else kind = 10;
+          e1(OP.STOREP, kind);
+          continue;
         } else {
           // default argument promotions
           const at = C.rv(a);
@@ -739,6 +793,7 @@
         }
         argc++;
       }
+      if (userVariadic) { if (vaArea < 0) vaArea = C.allocFrame(8, 8); e1(OP.LEAL, vaArea); argc++; }
       if (direct && sym && C.checkFormat && !C.quiet) C.checkFormat(e, sym.name, ftype, argTypes);
       if (direct) {
         const at = C.emit(OP.CALL, sym.idx, argc);

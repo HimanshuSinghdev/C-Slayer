@@ -58,11 +58,11 @@
     return C;
   }
 
-  function frontEnd(src, file, extraTokens) {
+  function frontEnd(src, file, extraTokens, userFiles) {
     const L = CC.lex(src, file);
     let toks = L.tokens;
     if (extraTokens && extraTokens.length) toks = extraTokens.concat(toks);
-    const P = CC.preprocess(toks, { headers: CC.libc.headers, file });
+    const P = CC.preprocess(toks, { headers: CC.libc.headers, file, userFiles });
     const R = CC.parse(P.tokens);
     return { lex: L, pp: P, ast: R.ast, errors: [].concat(L.errors, P.errors, R.errors), tokens: L.tokens };
   }
@@ -77,7 +77,7 @@
       extra = L.tokens.slice(0, -1);
       for (const t of extra) t.sys = true;
     }
-    const fe = frontEnd(src, opts.file || 'main.c', extra);
+    const fe = frontEnd(src, opts.file || 'main.c', extra, opts.userFiles);
     // front-end diagnostics
     for (const e of fe.errors) {
       if (e.sev === 'note') { C.errors.push(e); continue; }
@@ -152,7 +152,17 @@
     }
     for (const [name, s] of C.scopes[0]) {
       if (s.kind === 'func' && s.referenced && !s.defined && !s.builtin && !reported.has(name)) {
-        if (libc.table.has(name)) { C.error({ line: s.refLine || s.line }, "taking the address of library function '" + name + "' is not supported"); }
+        if (libc.table.has(name)) {
+          const ft = s.type;
+          if (ft.variadic || ft.unspecified) C.error({ line: s.refLine || s.line }, "taking the address of variadic library function '" + name + "' is not supported");
+          else {
+            // tiny trampoline so the library function can be called through a function pointer (qsort(..., strcmp), atexit(puts)...)
+            const rec = C.funcs[s.idx];
+            rec.entry = C.code.length; rec.frameSize = 0; C.line = s.refLine || s.line || 1;
+            C.emit(OP.ENTER, 0); C.emit(OP.CALLB, useBuiltin(name), ft.params.length); C.emit(OP.RET);
+            s.builtin = true;
+          }
+        }
         else { C.error({ line: s.refLine || s.line }, "undefined reference to '" + name + "'"); }
         reported.add(name);
       }
@@ -233,6 +243,7 @@
         C.gwrite(s.addr, 8, BigInt(a));
       }
     });
+    const libcBuf = C.allocGlobal(160, 16);       // scratch for localtime()/ctime()/asctime() results
     C.line = 1;
     const startPc = C.code.length;
     const m = C.mainSym;
@@ -248,7 +259,7 @@
     return {
       code: Int32Array.from(C.code), lines: Int32Array.from(C.lines), consts: C.consts,
       funcs: C.funcs, builtins: C.builtinList, rodata: Uint8Array.from(C.rodata), gdata,
-      globalSize: gdata.length, globalRedzones: C.redzones, symAddr, startPc,
+      globalSize: gdata.length, globalRedzones: C.redzones, symAddr, startPc, libcBuf,
       mainIdx: m.idx
     };
   }
@@ -269,12 +280,21 @@
       const keep = r.C.errors.filter(d => !(d.sev === 'warning' && /implicit declaration of function/.test(d.msg)));
       diags = implicitWarn.concat(keep);
     }
+    // diagnostics that come from an #include "file" carry line + 100000*n: show them as file:line text
+    const bases = r.fe.pp.fileBases || new Map();
+    const fileTable = [...bases].map(([name, base]) => ({ name, base }));
+    for (const d of diags) {
+      if (d.line >= 100000) {
+        const f = fileTable.find(x => d.line >= x.base && d.line < x.base + 100000);
+        if (f) { d.msg = f.name + ':' + (d.line - f.base) + ': ' + d.msg; d.line = 0; }
+      }
+    }
     const errors = diags.sort((a, b) => (a.line - b.line) || (a.col - b.col));
     const ok = r.ok && !errors.some(e => e.sev === 'error');
     return {
       ok, errors, program: ok ? r.program : null, source: src,
       ast: r.fe.ast, tokens: r.fe.tokens, comments: r.fe.lex.comments || [],
-      funcs: r.C.funcs, implicit: [...r.C.implicit]
+      funcs: r.C.funcs, implicit: [...r.C.implicit], fileTable
     };
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

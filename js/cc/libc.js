@@ -108,11 +108,16 @@
   }
 
   // ---------------------------------------------------------------- printf engine
-  function fmtPrintf(vm, fmt, args, ai) {
+  function fmtPrintf(vm, fmt, args, ai, vaPtr) {
     const out = [];
     const push = (s) => { for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i)); };
     let i = 0;
-    const nextArg = () => (ai < args.length ? args[ai++] : 0);
+    // vaPtr: address of a va_list buffer (8-byte slots written by the caller of a user-defined variadic function)
+    let vp = vaPtr === undefined ? -1 : vaPtr;
+    const nextArg = (kind) => {
+      if (vp >= 0) { vm.chk(vp, 8, false); const x = kind === 'f' ? vm.dv.getFloat64(vp, true) : vm.dv.getBigInt64(vp, true); vp += 8; return x; }
+      return ai < args.length ? args[ai++] : 0;
+    };
     while (i < fmt.length) {
       const c = fmt[i++];
       if (c !== 37) { out.push(c); continue; }
@@ -173,7 +178,7 @@
           break;
         }
         case 'f': case 'F': case 'e': case 'E': case 'g': case 'G': case 'a': case 'A': {
-          let x = nextArg(); x = typeof x === 'bigint' ? Number(x) : x;
+          let x = nextArg('f'); x = typeof x === 'bigint' ? Number(x) : x;
           const r = fmtFloat(x, conv, prec, flags);
           numeric = true;
           sign = r.neg ? '-' : flags.plus ? '+' : flags.space ? ' ' : '';
@@ -392,6 +397,14 @@
   def('fprintf', (vm, a) => {
     const fd = fdOf(vm, num(a[0])); const fmt = cstrArg(vm, a[1]); const out = fmtPrintf(vm, fmt, a, 2);
     const r = writeFd(vm, fd, out); return r; });
+  def('vprintf', (vm, a) => { const out = fmtPrintf(vm, cstrArg(vm, a[0]), a, 1, num(a[1])); vm.emit(1, out); return out.length; });
+  def('vfprintf', (vm, a) => { const fd = fdOf(vm, num(a[0])); const out = fmtPrintf(vm, cstrArg(vm, a[1]), a, 2, num(a[2])); return writeFd(vm, fd, out); });
+  def('vsprintf', (vm, a) => { const p = num(a[0]); const out = fmtPrintf(vm, cstrArg(vm, a[1]), a, 2, num(a[2])); vm.chkRange(p, out.length + 1, true); vm.u8.set(out, p); vm.u8[p + out.length] = 0; return out.length; });
+  def('vsnprintf', (vm, a) => {
+    const p = num(a[0]), size = num(a[1]); const out = fmtPrintf(vm, cstrArg(vm, a[2]), a, 3, num(a[3]));
+    if (size > 0) { const n = Math.min(out.length, size - 1); vm.chkRange(p, n + 1, true); vm.u8.set(out.slice(0, n), p); vm.u8[p + n] = 0; }
+    return out.length;
+  });
   def('sprintf', (vm, a) => { const p = num(a[0]); const out = fmtPrintf(vm, cstrArg(vm, a[1]), a, 2); vm.chkRange(p, out.length + 1, true); vm.u8.set(out, p); vm.u8[p + out.length] = 0; return out.length; });
   def('snprintf', (vm, a) => {
     const p = num(a[0]), size = num(a[1]); const out = fmtPrintf(vm, cstrArg(vm, a[2]), a, 3);
@@ -697,7 +710,98 @@
   // ---------------------------------------------------------------- time / unistd
   def('time', (vm, a) => { const t = BigInt(Math.floor(Date.now() / 1000)); const p = num(a[0]); if (p) { vm.chk(p, 8, true); vm.dv.setBigInt64(p, t, true); } return t; });
   def('clock', (vm) => BigInt(Math.round((Date.now() - vm.clockStart) * 1000)));
-  def('difftime', (vm, a) => Number(a[0] - a[1]));
+  def('difftime', (vm, a) => Number(big(a[0]) - big(a[1])));
+
+  // ---- getline / strtok_r / strnlen / aligned_alloc ----
+  def('getline', (vm, a) => {
+    const lp = num(a[0]), np = num(a[1]), fp = num(a[2]);
+    if (!lp || !np) return -1;
+    const so = srcForFile(vm, fp); if (!so) return -1;
+    const bytes = []; let k = 0;
+    for (;;) { const b = so.src.peek(k); if (b === -2) return WAIT; if (b === -1) break; bytes.push(b); k++; if (b === 10) break; }
+    if (!bytes.length) { if (so.f) so.f.eof = true; else vm.stdinAtEof = true; return -1; }
+    vm.chk(lp, 4, false); vm.chk(np, 8, true);
+    let ptr = vm.dv.getUint32(lp, true); const cap = Number(vm.dv.getBigUint64(np, true));
+    if (!ptr || cap < bytes.length + 1) {
+      const nc = Math.max(bytes.length + 1, 120);
+      ptr = ptr ? vm.realloc(ptr, nc, curLine(vm)) : vm.malloc(nc, curLine(vm));
+      if (!ptr) return -1;
+      vm.dv.setUint32(lp, ptr, true); vm.dv.setUint32(lp + 4, 0, true); vm.dv.setBigUint64(np, BigInt(nc), true);
+    }
+    vm.chkRange(ptr, bytes.length + 1, true); vm.u8.set(bytes, ptr); vm.u8[ptr + bytes.length] = 0;
+    so.src.commit(k);
+    return bytes.length;
+  });
+  def('strtok_r', (vm, a) => {
+    const sv = num(a[2]); vm.chk(sv, 8, true);
+    let p = num(a[0]); if (p === 0) p = vm.dv.getUint32(sv, true); if (p === 0) return 0;
+    const delim = new Set(vm.readCStr(num(a[1])));
+    const s = vm.readCStr(p); let i = 0;
+    while (i < s.length && delim.has(s[i])) i++;
+    if (i === s.length) { vm.dv.setUint32(sv, 0, true); return 0; }
+    let j = i; while (j < s.length && !delim.has(s[j])) j++;
+    if (j < s.length) { vm.chk(p + j, 1, true); vm.u8[p + j] = 0; vm.dv.setUint32(sv, p + j + 1, true); } else vm.dv.setUint32(sv, 0, true);
+    vm.dv.setUint32(sv + 4, 0, true);
+    return p + i;
+  });
+  def('strnlen', (vm, a) => { const p = num(a[0]), m = num(a[1]); let n = 0; while (n < m) { vm.chk(p + n, 1, false); if (vm.u8[p + n] === 0) break; n++; } return n; });
+  def('aligned_alloc', (vm, a) => vm.malloc(num(a[1]), curLine(vm)));
+
+  // ---- time: broken-down time. The local time zone is UTC (like most online judges). ----
+  const TM_SIZE = 56;
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function tmBuf(vm) { return vm.prog.libcBuf; }
+  function writeTm(vm, p, d) {
+    const f = [d.getUTCSeconds(), d.getUTCMinutes(), d.getUTCHours(), d.getUTCDate(), d.getUTCMonth(), d.getUTCFullYear() - 1900, d.getUTCDay(), Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000), 0];
+    f.forEach((v, i) => vm.dv.setInt32(p + 4 * i, v, true));
+    vm.dv.setInt32(p + 36, 0, true); vm.dv.setBigInt64(p + 40, 0n, true); vm.dv.setUint32(p + 48, 0, true); vm.dv.setUint32(p + 52, 0, true);
+  }
+  function readTm(vm, p) { vm.chk(p, 36, false); const g = (i) => vm.dv.getInt32(p + 4 * i, true); return { sec: g(0), min: g(1), hour: g(2), mday: g(3), mon: g(4), year: g(5), wday: g(6), yday: g(7) }; }
+  const tmFromTime = (vm, a) => { const p = num(a[0]); vm.chk(p, 8, false); const t = Number(vm.dv.getBigInt64(p, true)); const d = new Date(t * 1000); if (isNaN(d.getTime())) return 0; const b = tmBuf(vm); writeTm(vm, b, d); return b; };
+  def('gmtime', tmFromTime); def('localtime', tmFromTime);
+  def('mktime', (vm, a) => {
+    const p = num(a[0]); const t = readTm(vm, p);
+    const ms = Date.UTC(t.year + 1900, t.mon, t.mday, t.hour, t.min, t.sec);
+    if (isNaN(ms)) return -1;
+    writeTm(vm, p, new Date(ms)); return Math.floor(ms / 1000);
+  });
+  const two = (n) => String(n).padStart(2, '0');
+  function strf(vm, fmt, t) {
+    const d = new Date(Date.UTC(t.year + 1900, t.mon, t.mday, t.hour, t.min, t.sec));
+    let o = '';
+    for (let i = 0; i < fmt.length; i++) {
+      if (fmt[i] !== '%') { o += fmt[i]; continue; }
+      const c = fmt[++i];
+      switch (c) {
+        case 'Y': o += (t.year + 1900); break; case 'y': o += two((t.year + 1900) % 100); break; case 'C': o += two(Math.floor((t.year + 1900) / 100)); break;
+        case 'm': o += two(t.mon + 1); break; case 'd': o += two(t.mday); break; case 'e': o += String(t.mday).padStart(2, ' '); break;
+        case 'H': o += two(t.hour); break; case 'I': o += two(t.hour % 12 || 12); break; case 'M': o += two(t.min); break; case 'S': o += two(t.sec); break;
+        case 'p': o += t.hour < 12 ? 'AM' : 'PM'; break; case 'P': o += t.hour < 12 ? 'am' : 'pm'; break;
+        case 'a': o += DAYS[t.wday].slice(0, 3); break; case 'A': o += DAYS[t.wday]; break;
+        case 'b': case 'h': o += MONTHS[t.mon].slice(0, 3); break; case 'B': o += MONTHS[t.mon]; break;
+        case 'j': o += String(t.yday + 1).padStart(3, '0'); break; case 'u': o += (t.wday || 7); break; case 'w': o += t.wday; break;
+        case 'Z': o += 'UTC'; break; case 'z': o += '+0000'; break; case 'n': o += '\n'; break; case 't': o += '\t'; break; case '%': o += '%'; break;
+        case 'F': o += (t.year + 1900) + '-' + two(t.mon + 1) + '-' + two(t.mday); break;
+        case 'T': o += two(t.hour) + ':' + two(t.min) + ':' + two(t.sec); break; case 'R': o += two(t.hour) + ':' + two(t.min); break;
+        case 'D': o += two(t.mon + 1) + '/' + two(t.mday) + '/' + two((t.year + 1900) % 100); break;
+        case 'c': o += DAYS[t.wday].slice(0, 3) + ' ' + MONTHS[t.mon].slice(0, 3) + ' ' + String(t.mday).padStart(2, ' ') + ' ' + two(t.hour) + ':' + two(t.min) + ':' + two(t.sec) + ' ' + (t.year + 1900); break;
+        case 'x': o += two(t.mon + 1) + '/' + two(t.mday) + '/' + two((t.year + 1900) % 100); break;
+        case 'X': o += two(t.hour) + ':' + two(t.min) + ':' + two(t.sec); break;
+        case 's': o += Math.floor(d.getTime() / 1000); break;
+        default: o += '%' + (c === undefined ? '' : c);
+      }
+    }
+    return o;
+  }
+  def('strftime', (vm, a) => {
+    const p = num(a[0]), max = num(a[1]); const out = ASCII(strf(vm, vm.readCStr(num(a[2])).map(c => String.fromCharCode(c)).join(''), readTm(vm, num(a[3]))));
+    if (out.length + 1 > max) return 0;
+    vm.chkRange(p, out.length + 1, true); vm.u8.set(out, p); vm.u8[p + out.length] = 0; return out.length;
+  });
+  const asc = (vm, t) => { const b = tmBuf(vm) + 64; const s = ASCII(strf(vm, '%a %b %e %T %Y\n', t).replace(/^(\w+ \w+) (\s?\d)/, (m, x, y) => x + ' ' + y)); vm.u8.set(s, b); vm.u8[b + s.length] = 0; return b; };
+  def('asctime', (vm, a) => asc(vm, readTm(vm, num(a[0]))));
+  def('ctime', (vm, a) => { const p = num(a[0]); vm.chk(p, 8, false); const d = new Date(Number(vm.dv.getBigInt64(p, true)) * 1000); const b = tmBuf(vm); writeTm(vm, b, d); return asc(vm, readTm(vm, b)); });
   def('sleep', () => 0); def('usleep', () => 0);
 
   // ---------------------------------------------------------------- math

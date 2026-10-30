@@ -45,6 +45,10 @@ typedef long intmax_t; typedef unsigned long uintmax_t;
 #define INT32_MAX 2147483647
 #define UINT32_MAX 4294967295U
 #define INT64_MIN (-9223372036854775807L-1)
+#define INTPTR_MAX 9223372036854775807L
+#define INTPTR_MIN (-INTPTR_MAX - 1)
+#define UINTPTR_MAX 18446744073709551615UL
+#define PTRDIFF_MAX 9223372036854775807L
 #define INT64_MAX 9223372036854775807L
 #define UINT64_MAX 18446744073709551615UL
 #define SIZE_MAX 18446744073709551615UL
@@ -109,6 +113,11 @@ extern int errno;
 #ifndef _STDARG_H
 #define _STDARG_H
 typedef char *va_list;
+#define va_start(ap, last) ((ap) = __va_base)
+#define va_arg(ap, type) (*(type *)__va_next(&(ap)))
+#define va_end(ap) ((void)(ap))
+#define va_copy(d, s) ((d) = (s))
+void *__va_next(char **ap);
 #endif`;
 
   H['assert.h'] = `
@@ -125,6 +134,7 @@ void __assert_fail(const char *expr, const char *file, int line, const char *fun
   H['stdio.h'] = `
 #ifndef _STDIO_H
 #define _STDIO_H
+#include <stdarg.h>
 #include <stddef.h>
 typedef struct _IO_FILE { int fd; int flags; int pad0; int pad1; } FILE;
 typedef long fpos_t;
@@ -145,6 +155,15 @@ int printf(const char *format, ...);
 int fprintf(FILE *stream, const char *format, ...);
 int sprintf(char *str, const char *format, ...);
 int snprintf(char *str, size_t size, const char *format, ...);
+#ifndef _SSIZE_T
+#define _SSIZE_T
+typedef long ssize_t;
+#endif
+ssize_t getline(char **lineptr, size_t *n, FILE *stream);
+int vprintf(const char *format, va_list ap);
+int vfprintf(FILE *stream, const char *format, va_list ap);
+int vsprintf(char *str, const char *format, va_list ap);
+int vsnprintf(char *str, size_t size, const char *format, va_list ap);
 int scanf(const char *format, ...);
 int fscanf(FILE *stream, const char *format, ...);
 int sscanf(const char *str, const char *format, ...);
@@ -186,6 +205,7 @@ typedef struct { long quot; long rem; } ldiv_t;
 #define EXIT_FAILURE 1
 #define RAND_MAX 2147483647
 void *malloc(size_t size);
+void *aligned_alloc(size_t alignment, size_t size);
 void *calloc(size_t nmemb, size_t size);
 void *realloc(void *ptr, size_t size);
 void free(void *ptr);
@@ -236,6 +256,8 @@ char *strstr(const char *hay, const char *needle);
 char *strdup(const char *s);
 char *strndup(const char *s, size_t n);
 char *strtok(char *s, const char *delim);
+char *strtok_r(char *s, const char *delim, char **saveptr);
+size_t strnlen(const char *s, size_t maxlen);
 size_t strspn(const char *s, const char *accept);
 size_t strcspn(const char *s, const char *reject);
 char *strpbrk(const char *s, const char *accept);
@@ -282,6 +304,13 @@ typedef long clock_t;
 time_t time(time_t *t);
 clock_t clock(void);
 double difftime(time_t a, time_t b);
+struct tm { int tm_sec; int tm_min; int tm_hour; int tm_mday; int tm_mon; int tm_year; int tm_wday; int tm_yday; int tm_isdst; long tm_gmtoff; const char *tm_zone; };
+struct tm *gmtime(const time_t *t);
+struct tm *localtime(const time_t *t);
+time_t mktime(struct tm *tm);
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
+char *asctime(const struct tm *tm);
+char *ctime(const time_t *t);
 #endif`;
 
   H['unistd.h'] = `
@@ -296,6 +325,7 @@ int usleep(unsigned int usec);
 
   /** C source for library functions that need to call user code. Each chunk is compiled only when one of `names` is used. */
   CC.preludeChunks = [
+    { names: ['va_arg'], src: 'void *__va_next(char **ap) { char *p = *ap; *ap = p + 8; return p; }' },
     {
       names: ['qsort'],
       src: `

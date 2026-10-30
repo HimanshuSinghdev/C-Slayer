@@ -29,9 +29,13 @@ A program that does not compile scores 1–2; a program that crashes is capped a
 
 "Zero vulnerabilities" can't be promised by anyone for any software; this design removes the usual classes (code injection, XSS, server-side attacks) by having no server and no dynamic JS execution. Please report anything you find.
 
+## Language support
+Full C11 core: all types and operators, structs/unions/enums/typedefs, function pointers, VLAs, designated initialisers, `goto`, `switch`, `static`, user-defined variadic functions (`va_list`), `#include "file.h"` from your other editor tabs, and the common standard library (stdio, stdlib, string, ctype, math, time, assert, stdarg, limits, stdint, ...).
+Call arguments with side effects are evaluated right to left, like gcc (so `printf("%d %d", i++, i++)` prints what gcc prints).
+The local time zone is UTC.
+
 ## Not supported (yet)
-User-defined variadic functions (`va_list`), `long double` precision beyond `double`, threads, `fork`/sockets, `#include "local.h"`.
-Arguments are evaluated left-to-right (gcc evaluates right-to-left); code that depends on this is undefined behaviour anyway.
+`long double` precision beyond `double`, threads, `fork`/sockets, `fgetpos`/`freopen`, `erf`/`gamma` math functions, struct-by-value arguments to variadic functions.
 
 ## Deploy
 Upload the folder to a GitHub repo → Settings → Pages → branch `main`, root. Open the URL on your phone and "Add to Home screen".

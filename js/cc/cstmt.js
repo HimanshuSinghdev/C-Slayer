@@ -551,7 +551,12 @@
         }
         fn.params.push({ name: p.name, type: ptype });
       }
-      if (type.variadic) C.error(node, 'defining variadic functions is not supported yet');
+      if (type.variadic) {
+        // hidden last parameter: pointer to the caller's buffer of extra arguments (what va_start hands out)
+        const off = C.allocFrame(8, 8);
+        stores.push({ kind: 10, off });
+        C.declareSym('__va_base', { kind: 'var', name: '__va_base', type: T.ptr(T.char), storage: 'local', off, isParam: true, used: true, assigned: true, line: node.line });
+      }
       for (let i = stores.length - 1; i >= 0; i--) e1(OP.LSTOREP, stores[i].kind, stores[i].off);
       // array parameters with variable-length inner dimensions, e.g. int a[n][m]
       for (const p of pinfo) if (p.type.k === 'ptr' && C.hasVLA(p.type.to)) C.materializeVLA(p.type.to);

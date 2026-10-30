@@ -16,6 +16,8 @@
     const file = opts.file || 'main.c';
     const errors = [];
     const included = new Set();
+    const userFiles = (opts && opts.userFiles) || null;
+    const fileBases = new Map();     // user include file -> line offset (their diagnostics use line + base)
     const macros = new Map();
     const out = [];
     let expansions = 0;
@@ -416,6 +418,15 @@
         else { err(hash, '#include expects "FILENAME" or <FILENAME>'); return; }
       }
       if (depth >= MAX_INCLUDE_DEPTH) { err(hash, '#include nested too deeply'); return; }
+      if (!sys && userFiles && Object.prototype.hasOwnProperty.call(userFiles, name) && typeof userFiles[name] === 'string') {
+        let base = fileBases.get(name);
+        if (base === undefined) { base = 100000 * (fileBases.size + 1); fileBases.set(name, base); }
+        const r = CC.lex(userFiles[name], name);
+        for (const e of r.errors) errors.push(Object.assign({ file: name }, e, { line: e.line + base }));
+        for (const t of r.tokens) t.line += base;
+        processTokens(r.tokens, name, depth + 1, false);
+        return;
+      }
       if (Object.prototype.hasOwnProperty.call(headers, name)) {
         if (included.has(name)) return;
         included.add(name);
@@ -434,7 +445,7 @@
     processTokens(tokens, file, 0, false);
     const last = tokens[tokens.length - 1];
     out.push(last && last.k === 'eof' ? last : { k: 'eof', v: '', line: 0, col: 0 });
-    return { tokens: out, errors, included, macros };
+    return { tokens: out, errors, included, macros, fileBases };
   }
 
   CC.preprocess = preprocess;

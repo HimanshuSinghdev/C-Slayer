@@ -20,9 +20,23 @@ let session = null;            // { id, vm, running, stopped, spent }
 function plainErrors(list) {
   return (list || []).slice(0, 80).map(e => ({ line: e.line | 0, col: e.col | 0, msg: String(e.msg).slice(0, 400), sev: e.sev === 'warning' ? 'warning' : e.sev === 'note' ? 'note' : 'error' }));
 }
-function plainErr(e) {
+function plainErr(e, table) {
   if (!e) return null;
-  return { kind: String(e.kind || 'error'), message: String(e.message || e.kind || ''), line: e.line | 0, fn: e.fn || null };
+  let line = e.line | 0, message = String(e.message || e.kind || '');
+  if (line >= 100000 && table) { const f = table.find(x => line >= x.base && line < x.base + 100000); if (f) { message += ' (in ' + f.name + ':' + (line - f.base) + ')'; line = 0; } }
+  return { kind: String(e.kind || 'error'), message, line, fn: e.fn || null };
+}
+// other editor tabs, available to #include "name.h"
+function userFilesOf(m) {
+  const out = Object.create(null); let total = 0;
+  const src = m && m.files && typeof m.files === 'object' ? m.files : {};
+  for (const k of Object.keys(src).slice(0, 50)) {
+    const v = src[k];
+    if (typeof v !== 'string' || !/^[\w.\-]{1,40}$/.test(k)) continue;
+    total += v.length; if (total > 600000) break;
+    out[k] = v;
+  }
+  return out;
 }
 function plainLeaks(vm) {
   return vm.leaks().slice(0, 50).map(b => ({ size: b.size | 0, line: b.line | 0 }));
@@ -53,7 +67,7 @@ async function drive(s, limitMs, onOut, onWait) {
 async function handleRun(m) {
   if (session) session.stopped = true;
   const id = m.id;
-  const c = CC.compile(String(m.src || ''), {});
+  const c = CC.compile(String(m.src || ''), { userFiles: userFilesOf(m) });
   postMessage({ type: 'diag', id, ok: c.ok, errors: plainErrors(c.errors) });
   if (!c.ok) { postMessage({ type: 'end', id, compiled: false }); return; }
   const lim = limitsOf(m);
@@ -63,7 +77,7 @@ async function handleRun(m) {
     (fd, str) => postMessage({ type: 'out', id, fd, s: str }),
     () => new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }));
   if (session !== s) return;       // superseded
-  let err = status === 'error' ? plainErr(vm.error) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
+  let err = status === 'error' ? plainErr(vm.error, c.fileTable) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
   postMessage({
     type: 'end', id, compiled: true, status, exit: status === 'done' ? vm.exitCode : null, error: err,
     leaks: status === 'done' ? plainLeaks(vm) : [], steps: vm.stepCount | 0
@@ -89,7 +103,7 @@ async function runOnce(program, stdin, limitMs, heapMB) {
   const status = await drive(s, limitMs, (fd, str) => { if (fd === 1 && outLen < 400000) { out += str; outLen += str.length; } }, null);
   return {
     out, status, exit: status === 'done' ? vm.exitCode : null,
-    runError: status === 'error' ? plainErr(vm.error) : status === 'timeout' ? { kind: 'timeout', message: 'timeout', line: 0 } : null,
+    runError: status === 'error' ? plainErr(vm.error, null) : status === 'timeout' ? { kind: 'timeout', message: 'timeout', line: 0 } : null,
     leaks: status === 'done' ? plainLeaks(vm) : []
   };
 }
@@ -97,7 +111,7 @@ async function runOnce(program, stdin, limitMs, heapMB) {
 async function handleScore(m) {
   const id = m.id;
   if (session) { session.stopped = true; session = null; }
-  const c = CC.compile(String(m.src || ''), {});
+  const c = CC.compile(String(m.src || ''), { userFiles: userFilesOf(m) });
   let run = null; const tests = [];
   const lim = limitsOf(m);
   if (c.ok) {
