@@ -9,13 +9,14 @@
   class Abort extends Error {}
   const MAX_ERRORS = 60;
 
-  function makeContext() {
+  function makeContext(opts) {
     const C = {
       errors: [], seen: new Set(), quiet: false, sys: false, line: 1, curNode: null,
       scopes: [new Map()], tagScopes: [new Map()], structId: 0,
       code: [], lines: [], consts: [], constMap: new Map(), fixups: [], funcs: [],
       strings: new Map(), rodata: [], gdata: [], redzones: [],
-      loops: [], switches: [], switchTables: [], fn: null, implicit: new Set(), mainSym: null
+      loops: [], switches: [], switchTables: [], fn: null, implicit: new Set(), mainSym: null,
+      debug: !!opts.debug, dbgVars: []
     };
     // ----- diagnostics -----
     C.report = function (node, msg, sev) {
@@ -70,7 +71,7 @@
   function identSet(tokens) { const s = new Set(); for (const t of tokens) if (t.k === 'id') s.add(t.v); return s; }
 
   function compileOnce(src, opts, implicitHeaders) {
-    const C = makeContext();
+    const C = makeContext(opts);
     let extra = null;
     if (implicitHeaders && implicitHeaders.length) {
       const L = CC.lex(implicitHeaders.map(h => '#include <' + h + '>').join('\n') + '\n', '<implicit>');
@@ -224,6 +225,29 @@
     }
   }
 
+  /** JSON-friendly description of a C type for the debugger's value display. */
+  function typeDesc(t, depth) {
+    if (!t) return { k: 'void', name: 'void' };
+    const name = T.name(t);
+    switch (t.k) {
+      case 'int': return { k: 'int', size: t.size, signed: !!t.signed, isChar: !!t.isChar, isBool: !!t.isBool, name };
+      case 'float': return { k: 'float', size: Math.min(t.size, 8), name };
+      case 'ptr': {
+        const to = t.to;
+        const d = { k: 'ptr', name, cstr: !!(to && to.k === 'int' && to.size === 1 && to.isChar), isFunc: !!(to && to.k === 'func') };
+        if (to && depth < 2 && (to.k === 'struct' || to.k === 'int' || to.k === 'float' || to.k === 'ptr') && !d.cstr) d.to = typeDesc(to, depth + 1);
+        return d;
+      }
+      case 'array': return { k: 'array', n: t.n === null ? 0 : t.n, of: typeDesc(t.of, depth + 1), name, size: T.sizeOf(t) };
+      case 'struct': {
+        const d = { k: 'struct', name, size: t.size, isUnion: !!t.isUnion, fields: [] };
+        if (depth < 4 && t.fields) for (const f of t.fields.slice(0, 40)) if (f.name) d.fields.push({ name: f.name, off: f.off, type: typeDesc(f.type, depth + 1) });
+        return d;
+      }
+      default: return { k: t.k, name };
+    }
+  }
+
   function assemble(C) {
     // argv / envp live in read-only memory
     const progName = C.internString([97, 46, 111, 117, 116]);
@@ -255,11 +279,12 @@
     const symAddr = new Map();
     for (const [name, s] of C.scopes[0]) if (s.kind === 'var') symAddr.set(name, s.addr);
     const gdata = Uint8Array.from(C.gdata);
-    if (!C.noOpt) peephole(C);
+    const dbg = C.debug ? { vars: C.dbgVars.map(v => ({ fn: v.fn, name: v.name, type: typeDesc(v.type, 0), off: v.off, indirect: v.indirect, isParam: v.isParam, startPc: v.startPc, endPc: v.endPc, line: v.line })) } : null;
+    if (!C.noOpt && !C.debug) peephole(C);
     return {
       code: Int32Array.from(C.code), lines: Int32Array.from(C.lines), consts: C.consts,
       funcs: C.funcs, builtins: C.builtinList, rodata: Uint8Array.from(C.rodata), gdata,
-      globalSize: gdata.length, globalRedzones: C.redzones, symAddr, startPc, libcBuf,
+      globalSize: gdata.length, globalRedzones: C.redzones, symAddr, startPc, libcBuf, debug: dbg,
       mainIdx: m.idx
     };
   }

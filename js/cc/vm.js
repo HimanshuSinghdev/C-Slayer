@@ -101,6 +101,7 @@
       this.code = prog.code; this.lines = prog.lines; this.consts = prog.consts; this.funcs = prog.funcs;
       this.builtins = prog.builtins;
       this.maxSteps = opts.maxSteps || Infinity;
+      this.dbg = null;        // debugger state (see inspect.js); null = no overhead
       // ---- memory layout ----
       const dataEnd = MEM.RO_BASE + MEM.RO_SIZE + ((prog.globalSize + 15) & ~15);
       this.heapStart = (dataEnd + 4095) & ~4095;
@@ -651,7 +652,7 @@
             S[ssp - 1] = sp;
             break;
           }
-          case 103 /*LINE*/: pc++; break;
+          case 103 /*LINE*/: { const ln = code[pc++]; if (this.dbg !== null && this.dbgCheck(ln, frames.length)) { save(); return 'break'; } break; }
           case 104 /*HALT*/: { v = S[--ssp]; save(); this.exitCode = typeof v === 'bigint' ? Number(BigInt.asIntN(32, v)) : v | 0; this.done = true; return 'done'; }
           // ---- fused instructions (see peephole() in compile.js). Frame scalars never overlap redzones, so no checks. ----
           case 105 /*JCLL*/: {

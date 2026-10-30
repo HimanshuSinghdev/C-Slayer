@@ -295,6 +295,7 @@
     C.genStmt = function (s) {
       C.line = s.line || C.line;
       C.curNode = s;
+      if (C.debug && C.fn && !C.sys && s.k !== 'Block' && s.k !== 'Empty' && s.k !== 'Label' && s.k !== 'Case' && s.k !== 'Default' && s.line) e1(OP.LINE, s.line);
       switch (s.k) {
         case 'Empty': return;
         case 'StaticAssert': {
@@ -330,6 +331,7 @@
           if (s.c.k === 'Assign' && s.c.op === '=') C.warn(s.c, 'suggest parentheses around assignment used as truth value [-Wparentheses]');
           const lp = C.newLoop(false); const Ltop = lp.contL;
           C.place(Ltop);
+          if (C.debug && !C.sys) e1(OP.LINE, s.line);
           C.cond(s.c); C.jump(OP.JZ, lp.breakL);
           C.loops.push(lp); C.genScoped(s.body); C.loops.pop();
           C.jump(OP.JMP, Ltop);
@@ -350,6 +352,7 @@
           if (s.init) { if (s.init.k === 'Decl') C.genLocalDecl(s.init); else C.genStmt(s.init); }
           const lp = C.newLoop(false); const Ltop = C.newLabel();
           C.place(Ltop);
+          if (C.debug && !C.sys) e1(OP.LINE, s.line);
           if (s.c) { C.cond(s.c); C.jump(OP.JZ, lp.breakL); }
           C.loops.push(lp); C.genScoped(s.body); C.loops.pop();
           C.place(lp.contL);
@@ -412,6 +415,7 @@
 
     C.closeScope = function () {
       const scope = C.scopes[C.scopes.length - 1];
+      if (C.debug) for (const [, s] of scope) if (s.dbg) s.dbg.endPc = C.code.length;
       if (!C.sys && !C.quiet) {
         for (const [name, s] of scope) {
           if (s.kind === 'var' && s.localDecl && !s.used && !s.isParam) {

@@ -22,7 +22,7 @@
   // ---------------- editor ----------------
   const cm = CodeMirror.fromTextArea($('#code'), {
     mode: 'text/x-csrc', theme: 'slayer', lineNumbers: true, indentUnit: 4, tabSize: 4, indentWithTabs: false, smartIndent: true,
-    matchBrackets: true, autoCloseBrackets: { pairs: '()[]{}""\'\'', closeBefore: ')]}\'":;>,', triples: '', explode: '{}' }, styleActiveLine: false, lineWrapping: false, gutters: ['CodeMirror-linenumbers', 'gut'],
+    matchBrackets: true, autoCloseBrackets: { pairs: '()[]{}""\'\'', closeBefore: ')]}\'":;>,', triples: '', explode: '{}' }, styleActiveLine: false, lineWrapping: false, gutters: ['CodeMirror-linenumbers', 'bp', 'gut'],
     extraKeys: {
       'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(), 'Ctrl-Space': (c) => window.CSlayerComplete.ctrlSpace(c),
       Tab: (c) => { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection('    ', 'end'); },
@@ -37,6 +37,78 @@
     files[cur].code = cm.getValue();
     clearTimeout(saveT); saveT = setTimeout(save, 400);
     clearMarks();
+  });
+  // ---------------- breakpoints & debugger ----------------
+  let bpLines = new Set(LS.get('cs.bp.' + (files[cur] && files[cur].name), []));
+  let debugging = false, paused = false, curDbgLine = 0;
+  function saveBp() { LS.set('cs.bp.' + files[cur].name, [...bpLines]); }
+  function drawBp() {
+    cm.clearGutter('bp');
+    for (const ln of bpLines) { if (ln > cm.lineCount()) continue; const d = document.createElement('div'); d.className = 'bp-dot'; d.textContent = '●'; cm.setGutterMarker(ln - 1, 'bp', d); }
+  }
+  function toggleBp(line) { if (bpLines.has(line)) bpLines.delete(line); else bpLines.add(line); saveBp(); drawBp(); if (debugging && worker) worker.postMessage({ type: 'setbp', id: runId, breakpoints: [...bpLines] }); }
+  cm.on('gutterClick', (c, n, gutter) => { if (gutter === 'bp' || gutter === 'CodeMirror-linenumbers') toggleBp(n + 1); });
+  function showCurLine(line) {
+    if (curDbgLine) { try { cm.removeLineClass(curDbgLine - 1, 'background', 'cm-curline'); } catch (e) { /* */ } }
+    curDbgLine = line;
+    if (line > 0 && line <= cm.lineCount()) { cm.addLineClass(line - 1, 'background', 'cm-curline'); cm.scrollIntoView({ line: line - 1, ch: 0 }, 90); }
+  }
+  function endDebug() {
+    debugging = false; paused = false; showCurLine(0); cm.setOption('readOnly', false);
+    $('#tabDebug').hidden = true; $('#btnDebug').hidden = false;
+  }
+  function el2(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function varRow(v, depth) {
+    const box = el2('div', 'vrow');
+    const head = el2('div', 'vhead');
+    head.appendChild(el2('span', 'vname', v.name || ''));
+    head.appendChild(el2('span', 'vtype', v.type || ''));
+    head.appendChild(el2('span', 'vtext', v.text === undefined ? '' : v.text));
+    if (v.hint) head.appendChild(el2('span', 'vwarn', v.hint));
+    if (v.where) head.appendChild(el2('span', 'vwhere', '→ ' + v.where));
+    box.appendChild(head);
+    const kids = v.kids || (v.deref ? [Object.assign({}, v.deref, { name: '*' + (v.name || 'ptr') })] : null);
+    if (kids && kids.length && depth < 4) {
+      const det = document.createElement('details'); if (depth === 0 && v.kids && v.kids.length <= 8) det.open = true;
+      det.appendChild(el2('summary', '', kids.length + (v.deref && !v.kids ? ' → pointed-to value' : ' items')));
+      for (const k of kids) det.appendChild(varRow(k, depth + 1));
+      box.appendChild(det);
+    }
+    return box;
+  }
+  function renderSnap(snap) {
+    showCurLine(snap.line);
+    const st = $('#dStack'); st.textContent = '';
+    snap.stack.forEach((f, i) => st.appendChild(el2('div', 'sframe' + (i === 0 ? ' top' : ''), f.fn + '()  line ' + f.line)));
+    const vs = $('#dVars'); vs.textContent = '';
+    const top = snap.stack[0];
+    if (top) { vs.appendChild(el2('h4', 'dh', 'Variables in ' + top.fn + '()')); if (!top.vars.length) vs.appendChild(el2('p', 'hint', 'No variables yet.')); for (const v of top.vars) vs.appendChild(varRow(v, 0)); }
+    snap.stack.slice(1).forEach(f => { if (!f.vars.length) return; vs.appendChild(el2('h4', 'dh', 'In caller ' + f.fn + '()')); for (const v of f.vars) vs.appendChild(varRow(v, 0)); });
+    const hp = $('#dHeap'); hp.textContent = '';
+    if (!snap.heap.length) hp.appendChild(el2('p', 'hint', 'Nothing allocated yet.'));
+    const mx = Math.max(16, ...snap.heap.map(b => b.size));
+    for (const b of snap.heap) {
+      const r = el2('div', 'hblock' + (b.freed ? ' freed' : ''));
+      const bar = el2('i'); bar.style.width = Math.max(4, Math.round(100 * b.size / mx)) + '%'; r.appendChild(bar);
+      r.appendChild(el2('span', '', '0x' + b.addr.toString(16) + ' · ' + b.size + ' bytes · line ' + b.line + (b.freed ? ' · FREED' : ' · in use')));
+      hp.appendChild(r);
+    }
+  }
+  function startDebug() {
+    if (!$('#btnStop').hidden || debugging) return;
+    resetOutput(); setState('running'); clearMarks(); debugging = true; paused = false;
+    cm.setOption('readOnly', 'nocursor'); $('#tabDebug').hidden = false; showTab('debug'); $('#btnDebug').hidden = true;
+    $('#btnRun').hidden = true; $('#btnStop').hidden = true; $('#btnScore').disabled = true;
+    $('#dStack').textContent = ''; $('#dVars').textContent = ''; $('#dHeap').textContent = '';
+    runId++; ensureWorker().postMessage({ type: 'debug', id: runId, src: cm.getValue(), limits, files: otherFiles(), breakpoints: [...bpLines] });
+  }
+  function dstep(mode) { if (!debugging || !paused || !worker) return; paused = false; $('#dHint').textContent = mode === 'run' ? 'Running…' : 'Stepping…'; worker.postMessage({ type: 'dstep', id: runId, mode, breakpoints: [...bpLines] }); }
+  function stopDebug() { if (worker) worker.postMessage({ type: 'stop', id: runId }); }
+  $('#btnDebug').onclick = startDebug;
+  $('#dContinue').onclick = () => dstep('run'); $('#dOver').onclick = () => dstep('over'); $('#dInto').onclick = () => dstep('into'); $('#dOut').onclick = () => dstep('out'); $('#dStop').onclick = stopDebug;
+  document.addEventListener('keydown', (e) => {
+    if (!debugging) { if (e.key === 'F8') { e.preventDefault(); startDebug(); } return; }
+    if (e.key === 'F8') { e.preventDefault(); dstep('run'); } else if (e.key === 'F10') { e.preventDefault(); dstep('over'); } else if (e.key === 'F11') { e.preventDefault(); dstep(e.shiftKey ? 'out' : 'into'); }
   });
   function save() { LS.set('cs.files', files); LS.set('cs.cur', cur); }
   function clearMarks() { for (const m of marks) { try { cm.removeLineClass(m, 'background'); cm.setGutterMarker(m, 'gut', null); } catch (e) { /* line gone */ } } marks = []; }
@@ -59,7 +131,7 @@
     sel.value = String(cur);
   }
   function cleanName(n) { n = String(n || '').replace(/[^\w.\- ]/g, '').trim().slice(0, 40); if (!n) return ''; if (!/\.[ch]$/i.test(n)) n += '.c'; return n; }
-  $('#fileSel').addEventListener('change', (e) => { cur = +e.target.value | 0; cm.setValue(files[cur].code); cm.clearHistory(); save(); resetOutput(); });
+  $('#fileSel').addEventListener('change', (e) => { if (debugging) { e.target.value = String(cur); return toast('Stop debugging first'); } cur = +e.target.value | 0; bpLines = new Set(LS.get('cs.bp.' + files[cur].name, [])); drawBp(); cm.setValue(files[cur].code); cm.clearHistory(); save(); resetOutput(); });
   $('#fNew').onclick = () => { const n = cleanName(prompt('File name', 'program' + (files.length + 1) + '.c')); if (!n) return; if (files.length >= 50) return toast('Too many files'); files.push({ name: n, code: '#include <stdio.h>\n\nint main(void) {\n    \n    return 0;\n}\n' }); cur = files.length - 1; renderFiles(); cm.setValue(files[cur].code); save(); };
   $('#fRen').onclick = () => { const n = cleanName(prompt('Rename file', files[cur].name)); if (!n) return; files[cur].name = n; renderFiles(); save(); };
   $('#fDel').onclick = () => { if (files.length < 2) return toast('Keep at least one file'); if (!confirm('Delete ' + files[cur].name + '?')) return; files.splice(cur, 1); cur = Math.max(0, cur - 1); renderFiles(); cm.setValue(files[cur].code); save(); };
@@ -109,7 +181,13 @@
       const ln = document.createElement('span'); ln.className = 'ln'; ln.textContent = e.line ? 'L' + e.line : '';
       const sv = document.createElement('span'); sv.className = 'sv ' + e.sev; sv.textContent = e.sev;
       const tx = document.createElement('span'); tx.textContent = e.msg;
-      li.append(ln, sv, tx);
+      const body = document.createElement('div'); body.className = 'pbody'; body.appendChild(tx);
+      const ex = e.sev === 'note' ? null : window.CC.explain(e.msg);
+      if (ex) {
+        const w = document.createElement('div'); w.className = 'why'; w.textContent = ex.why; body.appendChild(w);
+        if (ex.fix) { const f = document.createElement('div'); f.className = 'fix'; f.textContent = '→ ' + ex.fix; body.appendChild(f); }
+      }
+      li.append(ln, sv, body);
       li.addEventListener('click', () => { if (e.line > 0) { cm.focus(); cm.setCursor(Math.min(e.line, cm.lineCount()) - 1, 0); cm.scrollIntoView({ line: e.line - 1, ch: 0 }, 80); } });
       ul.appendChild(li);
     }
@@ -123,7 +201,7 @@
     worker.onerror = () => { setState('error'); put('\nThe engine crashed and was restarted.\n', 'e'); finish(); try { worker.terminate(); } catch (e) { /* */ } worker = null; };
     return worker;
   }
-  function finish() { $('#btnRun').hidden = false; $('#btnStop').hidden = true; $('#inForm').hidden = true; $('#btnScore').disabled = false; }
+  function finish() { if (debugging && !paused && false) return; $('#btnRun').hidden = false; $('#btnStop').hidden = true; $('#inForm').hidden = true; $('#btnScore').disabled = false; }
 
   function otherFiles() { const o = {}; files.forEach((f, i) => { if (i !== cur) o[f.name] = f.code; }); return o; }
   function run() {
@@ -142,7 +220,8 @@
         if (!m.ok) { setState('error'); showTab('problems'); } break;
       case 'out': put(String(m.s), m.fd === 2 ? 'e' : ''); break;
       case 'wait': { const f = $('#inForm'); f.hidden = false; $('#inLine').focus(); break; }
-      case 'end': finish(); onEnd(m); break;
+      case 'paused': paused = true; $('#dHint').textContent = 'Paused at line ' + m.snap.line + '. Step with Over / Into / Out, or Continue.'; renderSnap(m.snap); break;
+      case 'end': if (debugging) endDebug(); finish(); onEnd(m); break;
       case 'fatal': setState('error'); put('\nInternal error: ' + m.message + '\n', 'e'); finish(); break;
       case 'score-result': onScore(m); break;
     }
@@ -155,6 +234,8 @@
       setState('error');
       put(nl + '✖ ' + m.error.message + (m.error.line ? '  (line ' + m.error.line + (m.error.fn ? ', in ' + m.error.fn + '()' : '') + ')' : '') + '\n', 'e');
       if (m.error.line) markLines([{ line: m.error.line, sev: 'error' }]);
+      const rx = window.CC.explainRuntime(m.error.kind);
+      if (rx) { put('\nWhat happened: ' + rx.why + '\n', 'u'); put('How to fix: ' + rx.fix + '\n', 'u'); }
       return;
     }
     setState(m.exit === 0 ? 'ok' : 'error');
@@ -224,6 +305,12 @@
     const col = r.score >= 8 ? '#4cd68a' : r.score >= 5 ? '#ffb347' : '#ff5d6c'; fg.style.stroke = col; fg.style.color = col;
     const info = el('div'); info.append(el('h3', '', r.grade), el('p', '', r.summary));
     hero.append(ring, info); wrap.appendChild(hero);
+    if (r.tips && r.tips.length) {
+      const tp = el('div', 'part tips'); tp.appendChild(el('div', 'hd', 'Quick wins'));
+      const ul = document.createElement('ul');
+      for (const t of r.tips) { const li = document.createElement('li'); const b = document.createElement('b'); b.textContent = '+' + t.gain + ' '; li.appendChild(b); li.appendChild(document.createTextNode((t.line ? 'Line ' + t.line + ': ' : '') + t.text)); ul.appendChild(li); }
+      tp.appendChild(ul); wrap.appendChild(tp);
+    }
     for (const part of r.parts) {
       const d = el('div', 'part'); const hd = el('div', 'hd'); hd.append(el('span', '', part.name), el('span', '', part.got + ' / ' + part.max));
       const bar = el('div', 'bar'); const fill = document.createElement('i'); bar.appendChild(fill); d.append(hd, bar);
@@ -253,7 +340,7 @@
     b.addEventListener('click', () => { cm.focus(); cm.replaceSelection(k === 'Tab' ? '    ' : k, 'end'); }); kb.appendChild(b); });
 
   // ---------------- boot ----------------
-  renderFiles(); renderTests(); saveTests(); renderProblems([]);
+  renderFiles(); renderTests(); saveTests(); renderProblems([]); drawBp();
   put('C·Slayer — a C compiler & grader by Himanshu Singh\nPress ▶ Run, or ★ Score to grade your code.\n\n', 'm');
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('service-worker.js').catch(() => { /* offline mode unavailable */ });

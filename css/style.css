@@ -120,3 +120,18 @@ html,body{height:100dvh;overflow:hidden}
 @media(max-height:500px) and (orientation:landscape){.split{flex-direction:row}.editor{flex:1 1 55%;border-bottom:0;border-right:1px solid var(--line)}.bottom{flex:1 1 45%}.by{display:none}.top{padding-top:4px;padding-bottom:4px}.keys{padding-top:3px;padding-bottom:3px}.keys button{min-height:30px}.files{padding-top:3px;padding-bottom:3px}}
 
 .lim{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13px;color:var(--tx)}.lim select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+
+.tips{border-color:var(--gold)}.tips li b{color:var(--gold)}
+
+.pbody{flex:1;min-width:0}.why{color:var(--dim);margin-top:4px;font-size:12.5px}.fix{color:var(--gold);margin-top:3px;font-size:12.5px}
+
+.bp-dot{color:var(--err);font-size:13px;line-height:1;cursor:pointer;text-align:center;width:14px}
+.CodeMirror-gutter.bp{width:16px}
+.cm-curline{background:rgba(255,179,71,.22)!important;box-shadow:inset 3px 0 0 var(--gold)}
+.dbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.dstack{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}.sframe{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 8px;color:var(--dim)}.sframe.top{border-color:var(--gold);color:var(--tx)}
+.dh{margin:12px 0 6px;font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+.vrow{font-family:var(--mono);font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line)}.vrow .vrow{margin-left:14px;border-bottom:0}
+.vhead{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.vname{color:var(--gold);font-weight:700}.vtype{color:var(--dim);font-size:11px}.vtext{color:var(--tx);word-break:break-all}.vwarn{color:var(--warn);font-size:11px}.vwhere{color:var(--info);font-size:11px}
+.vrow details{margin-top:2px}.vrow summary{color:var(--dim);font-size:11px;cursor:pointer}
+.hblock{position:relative;font-family:var(--mono);font-size:12px;padding:5px 8px;margin-bottom:4px;border:1px solid var(--line);border-radius:6px;overflow:hidden}.hblock i{position:absolute;inset:0 auto 0 0;background:rgba(76,214,138,.16)}.hblock span{position:relative}.hblock.freed i{background:rgba(255,93,108,.18)}.hblock.freed{color:var(--dim);text-decoration:line-through}

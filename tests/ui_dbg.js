@@ -1,0 +1,20 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 400, height: 800 } });
+  const errs = []; p.on('pageerror', e => errs.push(String(e))); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(800);
+  await p.evaluate(() => { const cm = document.querySelector('.CodeMirror').CodeMirror; cm.setValue('#include <stdio.h>\nint f(int x){\n  int y = x * 2;\n  return y;\n}\nint main(void){\n  int a = f(3);\n  printf("%d\\n", a);\n  return 0;\n}\n'); });
+  await p.click('.CodeMirror-linenumber >> text=7');
+  console.log('bp dots', await p.locator('.bp-dot').count());
+  await p.click('#btnDebug'); await p.waitForTimeout(1200);
+  console.log('curline', await p.locator('.cm-curline').count(), 'stack', await p.locator('.sframe').allInnerTexts());
+  console.log('vars', (await p.locator('#dVars').innerText()).replace(/\n/g, ' | ').slice(0, 200));
+  await p.click('#dInto'); await p.waitForTimeout(500);
+  console.log('stack2', await p.locator('.sframe').allInnerTexts());
+  await p.click('#dContinue'); await p.waitForTimeout(800);
+  console.log('btnRun hidden?', await p.locator('#btnRun').isHidden(), 'tabDebug hidden?', await p.locator('#tabDebug').isHidden());
+  console.log('out', (await p.locator('#out').first().innerText()).slice(0, 80));
+  console.log('errors', errs);
+  await p.screenshot({ path: '/tmp/claude-0/-home-claude/52ff6d1a-1253-58bd-a4b7-382c2ea5656c/scratchpad/dbg.png' });
+  await b.close();
+})();

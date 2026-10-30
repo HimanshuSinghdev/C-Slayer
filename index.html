@@ -22,6 +22,7 @@
   <div class="actions">
     <select id="samples" aria-label="Load a sample"><option value="">Samples…</option></select>
     <button id="btnRun" class="btn primary" title="Compile and run (Ctrl+Enter)"><span class="ico">▶</span><span class="lbl">Run</span></button>
+    <button id="btnDebug" class="btn" title="Step through the program (F8)"><span class="ico">🐞</span><span class="lbl">Debug</span></button>
     <button id="btnStop" class="btn danger" hidden title="Stop"><span class="ico">■</span><span class="lbl">Stop</span></button>
     <button id="btnScore" class="btn ember" title="Grade this program 1–10"><span class="ico">★</span><span class="lbl">Score</span></button>
   </div>
@@ -43,6 +44,7 @@
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="console" class="on">Console</button>
       <button role="tab" data-tab="problems">Problems <i id="probCount" class="badge" hidden>0</i></button>
+      <button role="tab" data-tab="debug" id="tabDebug" hidden>Debug</button>
       <button role="tab" data-tab="tests">Tests <i id="testCount" class="badge" hidden>0</i></button>
       <button role="tab" data-tab="score">Score</button>
     </div>
@@ -54,6 +56,20 @@
       </form>
     </div>
     <div id="p-problems" class="tabpane"><ul id="probList" class="problems"></ul><p id="probEmpty" class="empty">No problems. Run the program to check.</p></div>
+    <div id="p-debug" class="tabpane">
+      <div class="dbar">
+        <button class="chip" id="dContinue" title="Continue to next breakpoint (F8)">▶ Continue</button>
+        <button class="chip" id="dOver" title="Step over (F10)">⤼ Over</button>
+        <button class="chip" id="dInto" title="Step into (F11)">⤵ Into</button>
+        <button class="chip" id="dOut" title="Step out (Shift+F11)">⤴ Out</button>
+        <button class="chip" id="dStop" title="Stop debugging">■ End</button>
+      </div>
+      <p class="hint" id="dHint">Tap a line number to set a breakpoint (red dot).</p>
+      <div id="dStack" class="dstack"></div>
+      <div id="dVars" class="dvars"></div>
+      <h4 class="dh">Heap (malloc'd memory)</h4>
+      <div id="dHeap" class="dheap"></div>
+    </div>
     <div id="p-tests" class="tabpane">
       <p class="hint">Optional: add input/expected-output pairs. The grader runs your program on each and compares output (trailing spaces ignored).</p>
       <div id="testList"></div>
@@ -77,6 +93,7 @@
 <script src="vendor/closebrackets.js"></script>
 <script src="vendor/matchbrackets.js"></script>
 <script src="js/complete.js"></script>
+<script src="js/explain.js"></script>
 <script src="js/samples.js"></script>
 <script src="js/app.js"></script>
 </body>

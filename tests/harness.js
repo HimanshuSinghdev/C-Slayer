@@ -1,6 +1,6 @@
 // Loads every engine module and exposes run(src, {stdin}) -> {ok, errors, out, err, exit, runError, vm}
 const load = require('./load');
-const CC = load(['lexer.js','preproc.js','types.js','parser.js','isa.js','vm.js','headers.js','libc.js','cdecl.js','cexpr.js','cstmt.js','cfmt.js','compile.js','score.js']);
+const CC = load(['lexer.js','preproc.js','types.js','parser.js','isa.js','vm.js','inspect.js','headers.js','libc.js','cdecl.js','cexpr.js','cstmt.js','cfmt.js','compile.js','score.js']);
 function run(src, opts) {
   opts = opts || {};
   const c = CC.compile(src, opts);

@@ -23,7 +23,15 @@
       for (let i = C.tagScopes.length - 1; i >= 0; i--) { const s = C.tagScopes[i].get(name); if (s) return s; }
       return null;
     };
-    C.declareSym = (name, sym) => { C.scopes[C.scopes.length - 1].set(name, sym); return sym; };
+    C.declareSym = (name, sym) => {
+      C.scopes[C.scopes.length - 1].set(name, sym);
+      // debugger info: every local / parameter, with the code range in which it is visible
+      if (C.debug && C.fn && !C.sys && sym.kind === 'var' && sym.storage === 'local' && !String(name).startsWith('__')) {
+        sym.dbg = { fn: C.fn.sym.idx, name, type: sym.type, off: sym.off, indirect: !!sym.indirect, isParam: !!sym.isParam, startPc: C.code.length, endPc: 1e9, line: sym.line || C.line };
+        C.dbgVars.push(sym.dbg);
+      }
+      return sym;
+    };
 
     // ---------- type construction ----------
     const ARITH = (b) => {

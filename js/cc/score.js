@@ -247,7 +247,11 @@
     if (rr && rr.runError) total = Math.min(total, 6);
     let score = Math.round(total * 2) / 2;
     score = clamp(score, 1, 10);
-    return { score, grade: gradeWord(score), parts, summary: summarise(score, parts, rr) };
+    // "quick wins": the biggest deductions, with the points you would get back by fixing each
+    const tips = [];
+    for (const p of parts) for (const n of p.notes) if (n.delta < 0) tips.push({ gain: round1(Math.min(-n.delta, p.max)), text: n.text, line: n.line || 0, part: p.name });
+    tips.sort((a, b) => b.gain - a.gain);
+    return { score, grade: gradeWord(score), parts, tips: tips.slice(0, 4), summary: summarise(score, parts, rr) };
   };
 
   function gradeWord(s) {

@@ -4,7 +4,7 @@
  * Everything is plain data. No eval, no network.
  */
 'use strict';
-importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js',
+importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js', 'cc/inspect.js',
   'cc/headers.js', 'cc/libc.js', 'cc/cdecl.js', 'cc/cexpr.js', 'cc/cstmt.js', 'cc/cfmt.js', 'cc/compile.js', 'cc/score.js');
 
 const RUN_LIMIT_MS = 30000;     // default CPU time for an interactive run (time spent waiting for input is not counted)
@@ -54,6 +54,7 @@ async function drive(s, limitMs, onOut, onWait) {
     for (const q of vm.drainOutput()) onOut(q.fd, q.s);
     if (st === 'done') return 'done';
     if (st === 'error') return 'error';
+    if (st === 'break') return 'break';
     if (st === 'wait') {
       if (!onWait) { vm.feedInput('', true); continue; }
       await onWait();
@@ -64,18 +65,26 @@ async function drive(s, limitMs, onOut, onWait) {
   }
 }
 
-async function handleRun(m) {
+async function handleRun(m, debugging) {
   if (session) session.stopped = true;
   const id = m.id;
-  const c = CC.compile(String(m.src || ''), { userFiles: userFilesOf(m) });
+  const c = CC.compile(String(m.src || ''), { userFiles: userFilesOf(m), debug: !!debugging });
   postMessage({ type: 'diag', id, ok: c.ok, errors: plainErrors(c.errors) });
   if (!c.ok) { postMessage({ type: 'end', id, compiled: false }); return; }
   const lim = limitsOf(m);
   const vm = new CC.VM(c.program, { heapMB: lim.heapMB });
-  const s = session = { id, vm, stopped: false, spent: 0, wake: null };
-  const status = await drive(s, lim.timeMs,
-    (fd, str) => postMessage({ type: 'out', id, fd, s: str }),
-    () => new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }));
+  const s = session = { id, vm, stopped: false, spent: 0, wake: null, resume: null };
+  if (debugging) vm.dbgSet('into', m.breakpoints);
+  let status;
+  for (;;) {
+    status = await drive(s, lim.timeMs,
+      (fd, str) => postMessage({ type: 'out', id, fd, s: str }),
+      () => new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }));
+    if (status !== 'break') break;
+    postMessage({ type: 'paused', id, snap: vm.inspect() });
+    await new Promise(res => { s.resume = res; });
+    if (s.stopped) { status = 'stopped'; break; }
+  }
   if (session !== s) return;       // superseded
   let err = status === 'error' ? plainErr(vm.error, c.fileTable) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
   postMessage({
@@ -134,9 +143,17 @@ async function handleScore(m) {
 
 self.onmessage = (ev) => {
   const m = ev.data || {};
-  if (m.type === 'run') handleRun(m).catch(e => postMessage({ type: 'fatal', id: m.id, message: String(e && e.message || e) }));
+  if (m.type === 'debug') handleRun(m, true).catch(e => postMessage({ type: 'fatal', id: m.id, message: String(e && e.message || e) }));
+  else if (m.type === 'dstep') {
+    if (session && session.id === m.id && session.resume) {
+      const r = session.resume; session.resume = null;
+      session.vm.dbgSet(['into', 'over', 'out', 'run'].indexOf(m.mode) >= 0 ? m.mode : 'run', Array.isArray(m.breakpoints) ? m.breakpoints.slice(0, 200).map(x => x | 0) : []);
+      r();
+    }
+  } else if (m.type === 'setbp') { if (session && session.vm.dbg) session.vm.dbg.bp = new Set((m.breakpoints || []).slice(0, 200).map(x => x | 0)); }
+  else if (m.type === 'run') handleRun(m).catch(e => postMessage({ type: 'fatal', id: m.id, message: String(e && e.message || e) }));
   else if (m.type === 'stdin') handleStdin(m);
-  else if (m.type === 'stop') { if (session && session.id === m.id) { session.stopped = true; if (session.wake) session.wake(); postMessage({ type: 'end', id: m.id, compiled: true, status: 'stopped', exit: null, error: null, leaks: [] }); session = null; } }
+  else if (m.type === 'stop') { if (session && session.id === m.id) { session.stopped = true; if (session.wake) session.wake(); if (session.resume) session.resume(); postMessage({ type: 'end', id: m.id, compiled: true, status: 'stopped', exit: null, error: null, leaks: [] }); session = null; } }
   else if (m.type === 'score') handleScore(m).catch(e => postMessage({ type: 'fatal', id: m.id, message: String(e && e.message || e) }));
 };
 postMessage({ type: 'ready' });
