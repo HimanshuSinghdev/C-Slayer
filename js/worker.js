@@ -7,9 +7,12 @@
 importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js',
   'cc/headers.js', 'cc/libc.js', 'cc/cdecl.js', 'cc/cexpr.js', 'cc/cstmt.js', 'cc/cfmt.js', 'cc/compile.js', 'cc/score.js');
 
-const RUN_LIMIT_MS = 10000;     // CPU time for an interactive run (time spent waiting for input is not counted)
-const SCORE_RUN_MS = 5000;      // main run during scoring
-const TEST_RUN_MS = 2000;       // each test case
+const RUN_LIMIT_MS = 30000;     // default CPU time for an interactive run (time spent waiting for input is not counted)
+const SCORE_RUN_MS = 10000;     // main run during scoring
+const TEST_RUN_MS = 5000;       // each test case
+const TIME_CHOICES = [10, 30, 60, 120, 300], HEAP_CHOICES = [32, 64, 128, 256];
+function pick(list, v, d) { v = +v; return list.indexOf(v) >= 0 ? v : d; }
+function limitsOf(m) { const l = (m && m.limits) || {}; return { timeMs: pick(TIME_CHOICES, l.timeSec, 30) * 1000, heapMB: pick(HEAP_CHOICES, l.heapMB, 64) }; }
 const MAX_TESTS = 25, MAX_TEST_TEXT = 20000, SLICE = 150000;
 
 let session = null;            // { id, vm, running, stopped, spent }
@@ -53,13 +56,14 @@ async function handleRun(m) {
   const c = CC.compile(String(m.src || ''), {});
   postMessage({ type: 'diag', id, ok: c.ok, errors: plainErrors(c.errors) });
   if (!c.ok) { postMessage({ type: 'end', id, compiled: false }); return; }
-  const vm = new CC.VM(c.program, {});
+  const lim = limitsOf(m);
+  const vm = new CC.VM(c.program, { heapMB: lim.heapMB });
   const s = session = { id, vm, stopped: false, spent: 0, wake: null };
-  const status = await drive(s, RUN_LIMIT_MS,
+  const status = await drive(s, lim.timeMs,
     (fd, str) => postMessage({ type: 'out', id, fd, s: str }),
     () => new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }));
   if (session !== s) return;       // superseded
-  let err = status === 'error' ? plainErr(vm.error) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (RUN_LIMIT_MS / 1000) + ' seconds of running — probably an infinite loop.', line: vm.where ? vm.where().line | 0 : 0 } : null;
+  let err = status === 'error' ? plainErr(vm.error) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
   postMessage({
     type: 'end', id, compiled: true, status, exit: status === 'done' ? vm.exitCode : null, error: err,
     leaks: status === 'done' ? plainLeaks(vm) : [], steps: vm.stepCount | 0
@@ -77,8 +81,8 @@ function normalise(t) {
   return String(t).replace(/\r/g, '').split('\n').map(l => l.replace(/\s+$/, '')).join('\n').replace(/\n+$/, '');
 }
 
-async function runOnce(program, stdin, limitMs) {
-  const vm = new CC.VM(program, {});
+async function runOnce(program, stdin, limitMs, heapMB) {
+  const vm = new CC.VM(program, { heapMB: heapMB || 64 });
   vm.feedInput(stdin, true);
   const s = { vm, stopped: false, spent: 0 };
   let out = '', outLen = 0;
@@ -95,13 +99,14 @@ async function handleScore(m) {
   if (session) { session.stopped = true; session = null; }
   const c = CC.compile(String(m.src || ''), {});
   let run = null; const tests = [];
+  const lim = limitsOf(m);
   if (c.ok) {
-    run = await runOnce(c.program, String(m.stdin || '').slice(0, MAX_TEST_TEXT), SCORE_RUN_MS);
+    run = await runOnce(c.program, String(m.stdin || '').slice(0, MAX_TEST_TEXT), Math.max(SCORE_RUN_MS, Math.min(lim.timeMs, 60000)), lim.heapMB);
     const list = Array.isArray(m.tests) ? m.tests.slice(0, MAX_TESTS) : [];
     for (let i = 0; i < list.length; i++) {
       const t = list[i] || {};
       const name = String(t.name || 'Test ' + (i + 1)).slice(0, 60);
-      const r = await runOnce(c.program, String(t.input || '').slice(0, MAX_TEST_TEXT), TEST_RUN_MS);
+      const r = await runOnce(c.program, String(t.input || '').slice(0, MAX_TEST_TEXT), TEST_RUN_MS, lim.heapMB);
       const exp = normalise(String(t.expected || '').slice(0, MAX_TEST_TEXT));
       let pass = false, reason = '';
       if (r.runError) reason = r.runError.kind === 'timeout' ? 'timed out' : 'crashed (' + r.runError.message + ')';

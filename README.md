@@ -23,7 +23,7 @@ A program that does not compile scores 1–2; a program that crashes is capped a
 ## Security
 * No `eval`, no `new Function`, no network calls, no third-party requests: everything (CodeMirror, fonts) is vendored.
 * Strict Content-Security-Policy (`script-src 'self'`; no inline scripts or styles).
-* Student code never runs as JavaScript — it is compiled to bytecode and interpreted in a Worker with hard limits: step/time budget, 24 MB heap, 8 MB stack, 2 MB output, 400 KB source, bounded preprocessor expansion and nesting depth.
+* Student code never runs as JavaScript — it is compiled to bytecode and interpreted in a Worker with hard limits: time budget (30 s default, adjustable), 64 MB heap by default (up to 256 MB), 8 MB stack, 4 MB output, 400 KB source, bounded preprocessor expansion and nesting depth.
 * All program output is inserted with `textContent` (no HTML injection). Compiler tables are `Map`s (no prototype pollution). `%n` is ignored.
 * Tested with fuzzing (random token soup, deep nesting, macro bombs, huge allocations).
 

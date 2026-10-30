@@ -17,12 +17,12 @@
   class ExitSignal extends Error { constructor(code) { super('exit'); this.code = code; } }
 
   const P_HEAP = 1, P_FREED = 2, P_STACK = 3, P_GLOBAL = 4;
-  const HEAP_BYTES = 24 * 1024 * 1024;
-  const STACK_BYTES = 8 * 1024 * 1024;
-  const OUT_LIMIT = 2 * 1024 * 1024;
-  const MAX_FRAMES = 60000;
+  const HEAP_BYTES = 64 * 1024 * 1024;     // defaults; override with VM opts heapMB / stackMB / maxFrames
+  const STACK_BYTES = 8 * 1024 * 1024;     // same as the Linux default
+  const OUT_LIMIT = 4 * 1024 * 1024;
+  const MAX_FRAMES = 400000;
   const OPSTACK = 1 << 16;
-  const QUARANTINE = 2 * 1024 * 1024;
+  const QUARANTINE = 4 * 1024 * 1024;
 
   const hex = n => '0x' + (n >>> 0).toString(16);
   const I32_MIN = -2147483648;
@@ -89,14 +89,22 @@
       // ---- memory layout ----
       const dataEnd = MEM.RO_BASE + MEM.RO_SIZE + ((prog.globalSize + 15) & ~15);
       this.heapStart = (dataEnd + 4095) & ~4095;
-      this.heapEnd = this.heapStart + HEAP_BYTES;
-      this.stackTop = this.heapEnd + STACK_BYTES;
-      this.size = this.stackTop;
-      this.stackLimit = this.heapEnd + 4096;
-      const buf = new ArrayBuffer(this.size);
+      this.heapBytes = Math.min(Math.max((opts.heapMB | 0) || 64, 8), 512) * 1024 * 1024;
+      this.stackBytes = Math.min(Math.max((opts.stackMB | 0) || 8, 1), 64) * 1024 * 1024;
+      this.maxFrames = Math.min(Math.max(opts.maxFrames | 0 || MAX_FRAMES, 1000), 2000000);
+      // allocate; if the device refuses, retry with a smaller heap (memory is a browser decision, not ours)
+      let buf, poison;
+      for (;;) {
+        this.heapEnd = this.heapStart + this.heapBytes;
+        this.stackTop = this.heapEnd + this.stackBytes;
+        this.size = this.stackTop;
+        this.stackLimit = this.heapEnd + 4096;
+        try { buf = new ArrayBuffer(this.size); poison = new Uint8Array(this.size); break; }
+        catch (e) { if (this.heapBytes <= 16 * 1024 * 1024) throw e; this.heapBytes = this.heapBytes >> 1; this.heapReduced = true; buf = null; }
+      }
       this.u8 = new Uint8Array(buf);
       this.dv = new DataView(buf);
-      this.poison = new Uint8Array(this.size);
+      this.poison = poison;
       this.u8.set(prog.rodata, MEM.RO_BASE);
       this.u8.set(prog.gdata, MEM.RO_BASE + MEM.RO_SIZE);
       this.roStart = MEM.RO_BASE; this.roEnd = MEM.RO_BASE + MEM.RO_SIZE;
@@ -260,7 +268,7 @@
 
     // ---------- heap ----------
     malloc(n, line) {
-      if (n < 0 || n > HEAP_BYTES) return 0;
+      if (n < 0 || n > this.heapBytes) return 0;
       const rs = Math.max(16, (n + 15) & ~15);
       let addr = 0;
       const fl = this.freeLists.get(rs);
@@ -374,15 +382,15 @@
 
       for (;;) {
         switch (code[pc++]) {
-          case OP.ICONST: S[ssp++] = code[pc++]; break;
-          case OP.KCONST: S[ssp++] = consts[code[pc++]]; break;
-          case OP.POP: ssp--; break;
-          case OP.DUP: S[ssp] = S[ssp - 1]; ssp++; break;
-          case OP.DUPX1: a = S[ssp - 1]; b = S[ssp - 2]; S[ssp - 2] = a; S[ssp - 1] = b; S[ssp++] = a; break;
-          case OP.SWAP: a = S[ssp - 1]; S[ssp - 1] = S[ssp - 2]; S[ssp - 2] = a; break;
+          case 0 /*ICONST*/: S[ssp++] = code[pc++]; break;
+          case 1 /*KCONST*/: S[ssp++] = consts[code[pc++]]; break;
+          case 2 /*POP*/: ssp--; break;
+          case 3 /*DUP*/: S[ssp] = S[ssp - 1]; ssp++; break;
+          case 4 /*DUPX1*/: a = S[ssp - 1]; b = S[ssp - 2]; S[ssp - 2] = a; S[ssp - 1] = b; S[ssp++] = a; break;
+          case 5 /*SWAP*/: a = S[ssp - 1]; S[ssp - 1] = S[ssp - 2]; S[ssp - 2] = a; break;
 
-          case OP.LEAL: S[ssp++] = fp + code[pc++]; break;
-          case OP.LLOAD: {
+          case 6 /*LEAL*/: S[ssp++] = fp + code[pc++]; break;
+          case 7 /*LLOAD*/: {
             const k = code[pc++], ad = fp + code[pc++];
             switch (k) {
               case 0: rd(ad, 1); S[ssp++] = dv.getInt8(ad); break;
@@ -399,7 +407,7 @@
             }
             break;
           }
-          case OP.LSTORE: case OP.LSTOREP: {
+          case 8 /*LSTORE*/: case 9 /*LSTOREP*/: {
             const keep = code[pc - 1] === OP.LSTORE;
             const k = code[pc++], ad = fp + code[pc++];
             v = S[--ssp];
@@ -415,7 +423,7 @@
             if (keep) S[ssp++] = v;
             break;
           }
-          case OP.LOAD: {
+          case 10 /*LOAD*/: {
             const k = code[pc++]; a = S[ssp - 1];
             switch (k) {
               case 0: rd(a, 1); S[ssp - 1] = dv.getInt8(a); break;
@@ -432,7 +440,7 @@
             }
             break;
           }
-          case OP.STORE: case OP.STOREP: {
+          case 11 /*STORE*/: case 12 /*STOREP*/: {
             const keep = code[pc - 1] === OP.STORE;
             const k = code[pc++];
             v = S[--ssp]; a = S[--ssp];
@@ -450,94 +458,94 @@
           }
 
           // ---- int32 ----
-          case OP.ADD_I: ssp--; S[ssp - 1] = (S[ssp - 1] + S[ssp]) | 0; break;
-          case OP.SUB_I: ssp--; S[ssp - 1] = (S[ssp - 1] - S[ssp]) | 0; break;
-          case OP.MUL_I: ssp--; S[ssp - 1] = Math.imul(S[ssp - 1], S[ssp]); break;
-          case OP.DIV_I: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0 || (b === -1 && a === I32_MIN)) { save(); divz(); } S[ssp - 1] = (a / b) | 0; break;
-          case OP.MOD_I: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0 || (b === -1 && a === I32_MIN)) { save(); divz(); } S[ssp - 1] = (a % b) | 0; break;
-          case OP.AND_I: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
-          case OP.OR_I: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
-          case OP.XOR_I: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
-          case OP.SHL_I: ssp--; S[ssp - 1] = S[ssp - 1] << S[ssp]; break;
-          case OP.SHR_I: ssp--; S[ssp - 1] = S[ssp - 1] >> S[ssp]; break;
+          case 13 /*ADD_I*/: ssp--; S[ssp - 1] = (S[ssp - 1] + S[ssp]) | 0; break;
+          case 14 /*SUB_I*/: ssp--; S[ssp - 1] = (S[ssp - 1] - S[ssp]) | 0; break;
+          case 15 /*MUL_I*/: ssp--; S[ssp - 1] = Math.imul(S[ssp - 1], S[ssp]); break;
+          case 16 /*DIV_I*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0 || (b === -1 && a === I32_MIN)) { save(); divz(); } S[ssp - 1] = (a / b) | 0; break;
+          case 17 /*MOD_I*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0 || (b === -1 && a === I32_MIN)) { save(); divz(); } S[ssp - 1] = (a % b) | 0; break;
+          case 18 /*AND_I*/: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
+          case 19 /*OR_I*/: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
+          case 20 /*XOR_I*/: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
+          case 21 /*SHL_I*/: ssp--; S[ssp - 1] = S[ssp - 1] << S[ssp]; break;
+          case 22 /*SHR_I*/: ssp--; S[ssp - 1] = S[ssp - 1] >> S[ssp]; break;
           // ---- uint32 / pointers ----
-          case OP.ADD_U: ssp--; S[ssp - 1] = (S[ssp - 1] + S[ssp]) >>> 0; break;
-          case OP.SUB_U: ssp--; S[ssp - 1] = (S[ssp - 1] - S[ssp]) >>> 0; break;
-          case OP.MUL_U: ssp--; S[ssp - 1] = Math.imul(S[ssp - 1], S[ssp]) >>> 0; break;
-          case OP.DIV_U: ssp--; b = S[ssp]; if (b === 0) { save(); divz(); } S[ssp - 1] = Math.floor(S[ssp - 1] / b) >>> 0; break;
-          case OP.MOD_U: ssp--; b = S[ssp]; if (b === 0) { save(); divz(); } S[ssp - 1] = (S[ssp - 1] % b) >>> 0; break;
-          case OP.AND_U: ssp--; S[ssp - 1] = (S[ssp - 1] & S[ssp]) >>> 0; break;
-          case OP.OR_U: ssp--; S[ssp - 1] = (S[ssp - 1] | S[ssp]) >>> 0; break;
-          case OP.XOR_U: ssp--; S[ssp - 1] = (S[ssp - 1] ^ S[ssp]) >>> 0; break;
-          case OP.SHL_U: ssp--; S[ssp - 1] = (S[ssp - 1] << S[ssp]) >>> 0; break;
-          case OP.SHR_U: ssp--; S[ssp - 1] = S[ssp - 1] >>> S[ssp]; break;
+          case 23 /*ADD_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] + S[ssp]) >>> 0; break;
+          case 24 /*SUB_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] - S[ssp]) >>> 0; break;
+          case 25 /*MUL_U*/: ssp--; S[ssp - 1] = Math.imul(S[ssp - 1], S[ssp]) >>> 0; break;
+          case 26 /*DIV_U*/: ssp--; b = S[ssp]; if (b === 0) { save(); divz(); } S[ssp - 1] = Math.floor(S[ssp - 1] / b) >>> 0; break;
+          case 27 /*MOD_U*/: ssp--; b = S[ssp]; if (b === 0) { save(); divz(); } S[ssp - 1] = (S[ssp - 1] % b) >>> 0; break;
+          case 28 /*AND_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] & S[ssp]) >>> 0; break;
+          case 29 /*OR_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] | S[ssp]) >>> 0; break;
+          case 30 /*XOR_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] ^ S[ssp]) >>> 0; break;
+          case 31 /*SHL_U*/: ssp--; S[ssp - 1] = (S[ssp - 1] << S[ssp]) >>> 0; break;
+          case 32 /*SHR_U*/: ssp--; S[ssp - 1] = S[ssp - 1] >>> S[ssp]; break;
           // ---- int64 ----
-          case OP.ADD_L: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] + S[ssp]); break;
-          case OP.SUB_L: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] - S[ssp]); break;
-          case OP.MUL_L: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] * S[ssp]); break;
-          case OP.DIV_L: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0n || (b === -1n && a === I64_MIN)) { save(); divz(); } S[ssp - 1] = a / b; break;
-          case OP.MOD_L: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0n || (b === -1n && a === I64_MIN)) { save(); divz(); } S[ssp - 1] = a % b; break;
-          case OP.AND_L: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
-          case OP.OR_L: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
-          case OP.XOR_L: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
-          case OP.SHL_L: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] << (S[ssp] & 63n)); break;
-          case OP.SHR_L: ssp--; S[ssp - 1] = S[ssp - 1] >> (S[ssp] & 63n); break;
+          case 33 /*ADD_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] + S[ssp]); break;
+          case 34 /*SUB_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] - S[ssp]); break;
+          case 35 /*MUL_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] * S[ssp]); break;
+          case 36 /*DIV_L*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0n || (b === -1n && a === I64_MIN)) { save(); divz(); } S[ssp - 1] = a / b; break;
+          case 37 /*MOD_L*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0n || (b === -1n && a === I64_MIN)) { save(); divz(); } S[ssp - 1] = a % b; break;
+          case 38 /*AND_L*/: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
+          case 39 /*OR_L*/: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
+          case 40 /*XOR_L*/: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
+          case 41 /*SHL_L*/: ssp--; S[ssp - 1] = BigInt.asIntN(64, S[ssp - 1] << (S[ssp] & 63n)); break;
+          case 42 /*SHR_L*/: ssp--; S[ssp - 1] = S[ssp - 1] >> (S[ssp] & 63n); break;
           // ---- uint64 ----
-          case OP.ADD_UL: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] + S[ssp]); break;
-          case OP.SUB_UL: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] - S[ssp]); break;
-          case OP.MUL_UL: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] * S[ssp]); break;
-          case OP.DIV_UL: ssp--; b = S[ssp]; if (b === 0n) { save(); divz(); } S[ssp - 1] = S[ssp - 1] / b; break;
-          case OP.MOD_UL: ssp--; b = S[ssp]; if (b === 0n) { save(); divz(); } S[ssp - 1] = S[ssp - 1] % b; break;
-          case OP.AND_UL: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
-          case OP.OR_UL: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
-          case OP.XOR_UL: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
-          case OP.SHL_UL: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] << (S[ssp] & 63n)); break;
-          case OP.SHR_UL: ssp--; S[ssp - 1] = S[ssp - 1] >> (S[ssp] & 63n); break;
+          case 43 /*ADD_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] + S[ssp]); break;
+          case 44 /*SUB_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] - S[ssp]); break;
+          case 45 /*MUL_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] * S[ssp]); break;
+          case 46 /*DIV_UL*/: ssp--; b = S[ssp]; if (b === 0n) { save(); divz(); } S[ssp - 1] = S[ssp - 1] / b; break;
+          case 47 /*MOD_UL*/: ssp--; b = S[ssp]; if (b === 0n) { save(); divz(); } S[ssp - 1] = S[ssp - 1] % b; break;
+          case 48 /*AND_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;
+          case 49 /*OR_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] | S[ssp]; break;
+          case 50 /*XOR_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] ^ S[ssp]; break;
+          case 51 /*SHL_UL*/: ssp--; S[ssp - 1] = BigInt.asUintN(64, S[ssp - 1] << (S[ssp] & 63n)); break;
+          case 52 /*SHR_UL*/: ssp--; S[ssp - 1] = S[ssp - 1] >> (S[ssp] & 63n); break;
           // ---- float / double ----
-          case OP.ADD_F: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] + S[ssp]); break;
-          case OP.SUB_F: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] - S[ssp]); break;
-          case OP.MUL_F: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] * S[ssp]); break;
-          case OP.DIV_F: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] / S[ssp]); break;
-          case OP.ADD_D: ssp--; S[ssp - 1] = S[ssp - 1] + S[ssp]; break;
-          case OP.SUB_D: ssp--; S[ssp - 1] = S[ssp - 1] - S[ssp]; break;
-          case OP.MUL_D: ssp--; S[ssp - 1] = S[ssp - 1] * S[ssp]; break;
-          case OP.DIV_D: ssp--; S[ssp - 1] = S[ssp - 1] / S[ssp]; break;
+          case 53 /*ADD_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] + S[ssp]); break;
+          case 54 /*SUB_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] - S[ssp]); break;
+          case 55 /*MUL_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] * S[ssp]); break;
+          case 56 /*DIV_F*/: ssp--; S[ssp - 1] = Math.fround(S[ssp - 1] / S[ssp]); break;
+          case 57 /*ADD_D*/: ssp--; S[ssp - 1] = S[ssp - 1] + S[ssp]; break;
+          case 58 /*SUB_D*/: ssp--; S[ssp - 1] = S[ssp - 1] - S[ssp]; break;
+          case 59 /*MUL_D*/: ssp--; S[ssp - 1] = S[ssp - 1] * S[ssp]; break;
+          case 60 /*DIV_D*/: ssp--; S[ssp - 1] = S[ssp - 1] / S[ssp]; break;
           // ---- comparisons (numbers and BigInts both work with JS relational operators) ----
-          case OP.EQ_I: case OP.EQ_U: case OP.EQ_L: case OP.EQ_F: ssp--; S[ssp - 1] = S[ssp - 1] === S[ssp] ? 1 : 0; break;
-          case OP.NE_I: case OP.NE_U: case OP.NE_L: case OP.NE_F: ssp--; S[ssp - 1] = S[ssp - 1] !== S[ssp] ? 1 : 0; break;
-          case OP.LT_I: case OP.LT_U: case OP.LT_L: case OP.LT_F: ssp--; S[ssp - 1] = S[ssp - 1] < S[ssp] ? 1 : 0; break;
-          case OP.GT_I: case OP.GT_U: case OP.GT_L: case OP.GT_F: ssp--; S[ssp - 1] = S[ssp - 1] > S[ssp] ? 1 : 0; break;
-          case OP.LE_I: case OP.LE_U: case OP.LE_L: case OP.LE_F: ssp--; S[ssp - 1] = S[ssp - 1] <= S[ssp] ? 1 : 0; break;
-          case OP.GE_I: case OP.GE_U: case OP.GE_L: case OP.GE_F: ssp--; S[ssp - 1] = S[ssp - 1] >= S[ssp] ? 1 : 0; break;
+          case 61 /*EQ_I*/: case 67 /*EQ_U*/: case 73 /*EQ_L*/: case 79 /*EQ_F*/: ssp--; S[ssp - 1] = S[ssp - 1] === S[ssp] ? 1 : 0; break;
+          case 62 /*NE_I*/: case 68 /*NE_U*/: case 74 /*NE_L*/: case 80 /*NE_F*/: ssp--; S[ssp - 1] = S[ssp - 1] !== S[ssp] ? 1 : 0; break;
+          case 63 /*LT_I*/: case 69 /*LT_U*/: case 75 /*LT_L*/: case 81 /*LT_F*/: ssp--; S[ssp - 1] = S[ssp - 1] < S[ssp] ? 1 : 0; break;
+          case 64 /*GT_I*/: case 70 /*GT_U*/: case 76 /*GT_L*/: case 82 /*GT_F*/: ssp--; S[ssp - 1] = S[ssp - 1] > S[ssp] ? 1 : 0; break;
+          case 65 /*LE_I*/: case 71 /*LE_U*/: case 77 /*LE_L*/: case 83 /*LE_F*/: ssp--; S[ssp - 1] = S[ssp - 1] <= S[ssp] ? 1 : 0; break;
+          case 66 /*GE_I*/: case 72 /*GE_U*/: case 78 /*GE_L*/: case 84 /*GE_F*/: ssp--; S[ssp - 1] = S[ssp - 1] >= S[ssp] ? 1 : 0; break;
 
           // ---- unary / conversions ----
-          case OP.NEG: {
+          case 85 /*NEG*/: {
             const c = code[pc++]; a = S[ssp - 1];
             S[ssp - 1] = c === 0 ? (-a) | 0 : c === 1 ? (-a) >>> 0 : c === 2 ? BigInt.asIntN(64, -a) : c === 3 ? BigInt.asUintN(64, -a) : c === 4 ? Math.fround(-a) : -a;
             break;
           }
-          case OP.BNOT: {
+          case 86 /*BNOT*/: {
             const c = code[pc++]; a = S[ssp - 1];
             S[ssp - 1] = c === 0 ? ~a : c === 1 ? (~a) >>> 0 : c === 2 ? ~a : BigInt.asUintN(64, ~a);
             break;
           }
-          case OP.LNOT: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = (c === 2 || c === 3) ? (a === 0n ? 1 : 0) : (a === 0 ? 1 : 0); break; }
-          case OP.TOBOOL: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = (c === 2 || c === 3) ? (a !== 0n ? 1 : 0) : (a !== 0 ? 1 : 0); break; }
-          case OP.CONV: S[ssp - 1] = conv(S[ssp - 1], code[pc++]); break;
-          case OP.NARROW: {
+          case 87 /*LNOT*/: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = (c === 2 || c === 3) ? (a === 0n ? 1 : 0) : (a === 0 ? 1 : 0); break; }
+          case 88 /*TOBOOL*/: { const c = code[pc++]; a = S[ssp - 1]; S[ssp - 1] = (c === 2 || c === 3) ? (a !== 0n ? 1 : 0) : (a !== 0 ? 1 : 0); break; }
+          case 89 /*CONV*/: S[ssp - 1] = conv(S[ssp - 1], code[pc++]); break;
+          case 90 /*NARROW*/: {
             const k = code[pc++]; a = S[ssp - 1];
             S[ssp - 1] = k === 0 ? (a << 24) >> 24 : k === 1 ? a & 255 : k === 2 ? (a << 16) >> 16 : a & 65535;
             break;
           }
 
           // ---- control ----
-          case OP.JMP: pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } break;
-          case OP.JZ: if (S[--ssp] === 0) { pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } } else pc++; break;
-          case OP.JNZ: if (S[--ssp] !== 0) { pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } } else pc++; break;
-          case OP.SWITCH: { const t = consts[code[pc++]]; v = S[--ssp]; const d = t.map.get(v); pc = d === undefined ? t.def : d; break; }
-          case OP.ENTER: {
+          case 91 /*JMP*/: pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } break;
+          case 92 /*JZ*/: if (S[--ssp] === 0) { pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } } else pc++; break;
+          case 93 /*JNZ*/: if (S[--ssp] !== 0) { pc = code[pc]; if (--budget <= 0) { save(); return 'yield'; } } else pc++; break;
+          case 94 /*SWITCH*/: { const t = consts[code[pc++]]; v = S[--ssp]; const d = t.map.get(v); pc = d === undefined ? t.def : d; break; }
+          case 98 /*ENTER*/: {
             const fs = code[pc++];
-            if (frames.length >= MAX_FRAMES) { save(); self.fail('stack-overflow', 'Stack overflow: too many nested function calls (infinite recursion?)'); }
+            if (frames.length >= this.maxFrames) { save(); self.fail('stack-overflow', 'Stack overflow: too many nested function calls (infinite recursion?)'); }
             fp = sp - fs; if (fp < this.stackLimit) { save(); self.fail('stack-overflow', 'Stack overflow: the program used too much stack (infinite recursion or a huge local array?)'); }
             sp = fp;
             // poison the stack frame so leftovers from earlier calls look like garbage, then mark array red zones
@@ -546,7 +554,7 @@
             if (f.redzones && f.redzones.length) for (const r of f.redzones) poison.fill(P_STACK, fp + r.off, fp + r.off + r.len);
             break;
           }
-          case OP.CALL: {
+          case 95 /*CALL*/: {
             const fi = code[pc++], argc = code[pc++];
             const f = this.funcs[fi];
             frames.push({ ret: pc, fp, sp, fn: this.curFn });
@@ -555,7 +563,7 @@
             if (--budget <= 0) { save(); return 'yield'; }
             break;
           }
-          case OP.CALLI: {
+          case 96 /*CALLI*/: {
             const argc = code[pc++]; a = S[--ssp];
             const fi = ((a - MEM.FUNC_BASE) / MEM.FUNC_STRIDE) | 0;
             const f = this.funcs[fi];
@@ -568,7 +576,7 @@
             if (--budget <= 0) { save(); return 'yield'; }
             break;
           }
-          case OP.CALLB: {
+          case 97 /*CALLB*/: {
             const bi = code[pc++], argc = code[pc++];
             const bf = this.builtins[bi];
             const args = argc ? S.slice(ssp - argc, ssp) : [];
@@ -580,35 +588,35 @@
             sp = this.sp; // builtins never move sp
             break;
           }
-          case OP.RET: {
+          case 99 /*RET*/: {
             const f = this.funcs[this.curFn];
             if (f.redzones.length) poison.fill(0, fp, fp + f.frameSize);
             const fr = frames.pop();
             fp = fr.fp; sp = fr.sp; pc = fr.ret; this.curFn = fr.fn;
             break;
           }
-          case OP.MEMCPY: {
+          case 100 /*MEMCPY*/: {
             const n = code[pc++]; a = S[--ssp]; b = S[ssp - 1]; // a = src, b = dst
             if (n > 0) { save(); self.chkRange(a, n, false); self.chkRange(b, n, true); u8.copyWithin(b, a, a + n); }
             break;
           }
-          case OP.MEMZERO: {
+          case 101 /*MEMZERO*/: {
             const n = code[pc++]; a = S[--ssp];
             if (n > 0) { save(); self.chkRange(a, n, true); u8.fill(0, a, a + n); }
             break;
           }
-          case OP.ALLOCA: {
+          case 102 /*ALLOCA*/: {
             const unit = code[pc++]; let n = S[ssp - 1];
             n = typeof n === 'bigint' ? Number(n) : n;
-            n = n * unit; if (!(n >= 0) || n > STACK_BYTES) { save(); self.fail('stack-overflow', 'Stack overflow: variable-length array is too large (' + n + ' bytes)'); }
+            n = n * unit; if (!(n >= 0) || n > this.stackBytes) { save(); self.fail('stack-overflow', 'Stack overflow: variable-length array is too large (' + n + ' bytes)'); }
             n = (n + 15) & ~15;
             sp -= n; if (sp < this.stackLimit) { save(); self.fail('stack-overflow', 'Stack overflow: variable-length array is too large'); }
             u8.fill(0xCC, sp, sp + n);
             S[ssp - 1] = sp;
             break;
           }
-          case OP.LINE: pc++; break;
-          case OP.HALT: { v = S[--ssp]; save(); this.exitCode = typeof v === 'bigint' ? Number(BigInt.asIntN(32, v)) : v | 0; this.done = true; return 'done'; }
+          case 103 /*LINE*/: pc++; break;
+          case 104 /*HALT*/: { v = S[--ssp]; save(); this.exitCode = typeof v === 'bigint' ? Number(BigInt.asIntN(32, v)) : v | 0; this.done = true; return 'done'; }
           default:
             save(); self.fail('internal', 'Internal error: bad instruction ' + code[pc - 1] + ' at ' + (pc - 1));
         }

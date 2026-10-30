@@ -118,3 +118,5 @@ html,body{height:100dvh;overflow:hidden}
 .files{overflow:hidden}.files .chip{min-width:34px;padding:7px 8px;flex:0 0 auto}#fileSel{flex:1 1 0}
 @media(max-width:360px){.word{font-size:13px;letter-spacing:.08em}#samples{max-width:84px}.top{padding-left:8px;padding-right:8px}.hero{flex-direction:column;align-items:flex-start}}
 @media(max-height:500px) and (orientation:landscape){.split{flex-direction:row}.editor{flex:1 1 55%;border-bottom:0;border-right:1px solid var(--line)}.bottom{flex:1 1 45%}.by{display:none}.top{padding-top:4px;padding-bottom:4px}.keys{padding-top:3px;padding-bottom:3px}.keys button{min-height:30px}.files{padding-top:3px;padding-bottom:3px}}
+
+.lim{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13px;color:var(--tx)}.lim select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 8px}

@@ -6,7 +6,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
   };
-  const MAX_OUT = 300000;
+  const MAX_OUT = 1000000;
 
   // ---------------- state ----------------
   let files = LS.get('cs.files', null);
@@ -14,6 +14,7 @@
   files = files.filter(f => f && typeof f.name === 'string' && typeof f.code === 'string').slice(0, 50);
   if (!files.length) files = [{ name: 'main.c', code: window.SAMPLES[0].code }];
   let cur = Math.min(Math.max(0, LS.get('cs.cur', 0) | 0), files.length - 1);
+  let limits = LS.get('cs.limits', { timeSec: 30, heapMB: 64 }); if (!limits || typeof limits !== 'object') limits = { timeSec: 30, heapMB: 64 };
   let tests = LS.get('cs.tests', []); if (!Array.isArray(tests)) tests = [];
   let stdinText = LS.get('cs.stdin', ''); if (typeof stdinText !== 'string') stdinText = '';
   let worker = null, runId = 0, outLen = 0, marks = [];
@@ -128,7 +129,7 @@
     if (!$('#btnStop').hidden) return;
     resetOutput(); showTab('console'); setState('running'); clearMarks();
     $('#btnRun').hidden = true; $('#btnStop').hidden = false; $('#btnScore').disabled = true;
-    runId++; ensureWorker().postMessage({ type: 'run', id: runId, src: cm.getValue() });
+    runId++; ensureWorker().postMessage({ type: 'run', id: runId, src: cm.getValue(), limits });
   }
   function stop() { if (worker) worker.postMessage({ type: 'stop', id: runId }); }
   $('#btnRun').onclick = run; $('#btnStop').onclick = stop;
@@ -187,6 +188,12 @@
   $('#addTest').onclick = () => { if (tests.length >= 25) return toast('Up to 25 test cases'); tests.push({ name: 'Test ' + (tests.length + 1), input: '', expected: '' }); saveTests(); renderTests(); };
   const st = $('#stdinText'); st.value = stdinText; st.addEventListener('input', () => { stdinText = st.value; LS.set('cs.stdin', stdinText); });
 
+  const tl = $('#limTime'), ml = $('#limMem');
+  tl.value = String(limits.timeSec); ml.value = String(limits.heapMB);
+  if (!tl.value) tl.value = '30'; if (!ml.value) ml.value = '64';
+  const saveLim = () => { limits = { timeSec: +tl.value, heapMB: +ml.value }; LS.set('cs.limits', limits); };
+  tl.addEventListener('change', saveLim); ml.addEventListener('change', saveLim);
+
   // ---------------- scoring ----------------
   let scoreId = 0;
   $('#btnScore').onclick = () => {
@@ -194,7 +201,7 @@
     $('#btnScore').disabled = true; setState('running'); showTab('score');
     const box = $('#scoreBox'); box.textContent = ''; const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'Compiling, running and grading…'; box.appendChild(p);
     runId++; scoreId = runId;
-    ensureWorker().postMessage({ type: 'score', id: runId, src: cm.getValue(), stdin: stdinText, tests: tests.map(t => ({ name: t.name, input: t.input, expected: t.expected })) });
+    ensureWorker().postMessage({ type: 'score', id: runId, src: cm.getValue(), stdin: stdinText, limits, tests: tests.map(t => ({ name: t.name, input: t.input, expected: t.expected })) });
   };
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   function creditEl() { const c = el('p', 'credit', 'Graded by C·Slayer · built by '); c.appendChild(el('b', '', 'Himanshu Singh')); return c; }

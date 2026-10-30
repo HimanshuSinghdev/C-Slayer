@@ -1,5 +1,5 @@
 /* C-Slayer service worker: cache-first for the app shell, so it works offline. Same-origin GETs only. */
-const CACHE = 'c-slayer-v2';
+const CACHE = 'c-slayer-v3';
 const ASSETS = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/samples.js', 'js/worker.js',
   'js/cc/lexer.js', 'js/cc/preproc.js', 'js/cc/types.js', 'js/cc/parser.js', 'js/cc/isa.js', 'js/cc/vm.js', 'js/cc/headers.js', 'js/cc/libc.js',
   'js/cc/cdecl.js', 'js/cc/cexpr.js', 'js/cc/cstmt.js', 'js/cc/cfmt.js', 'js/cc/compile.js', 'js/cc/score.js',
