@@ -226,9 +226,9 @@
           if (s && s.kind === 'enum') return { k: 'int', v: s.value, t: T.int };
           return null;
         }
-        case 'SizeofT': { const t = C.typeOfName(e.tn); if (t.vla) return null; return { k: 'int', v: BigInt(T.sizeOf(t)), t: T.ulong }; }
+        case 'SizeofT': { const t = C.typeOfName(e.tn); if (t.vla || (t.k === 'struct' && !t.complete)) return null; return { k: 'int', v: BigInt(T.sizeOf(t)), t: T.ulong }; }
         case 'SizeofE': {
-          const t = C.staticTypeOf(e.e); if (!t || t.vla) return null;
+          const t = C.staticTypeOf(e.e); if (!t || t.vla || (t.k === 'struct' && !t.complete)) return null;
           return { k: 'int', v: BigInt(T.sizeOf(t)), t: T.ulong };
         }
         case 'AlignofT': { const t = C.typeOfName(e.tn); return { k: 'int', v: BigInt(T.alignOf(t)), t: T.ulong }; }

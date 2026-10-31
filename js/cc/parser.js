@@ -410,6 +410,15 @@
           }
           const e = parseUnary();
           return { k: 'SizeofE', e, line: t.line, col: t.col };
+        } else if (t.k === 'id' && t.v === '_Generic') {
+          next(); expectP('(');
+          const ctl = parseAssign(); const assoc = [];
+          while (accept(',')) {
+            if (isId('default')) { next(); expectP(':'); assoc.push({ tn: null, e: parseAssign() }); }
+            else { const tn = parseTypeName(); expectP(':'); assoc.push({ tn, e: parseAssign() }); }
+          }
+          expectP(')');
+          return parsePostfixOps({ k: 'Generic', e: ctl, assoc, line: t.line, col: t.col });
         } else if (t.k === 'id' && (t.v === '_Alignof')) {
           next(); expectP('(');
           const tn = parseTypeName(); expectP(')');

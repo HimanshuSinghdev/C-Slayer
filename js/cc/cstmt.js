@@ -191,6 +191,8 @@
           const s = C.declareFunction(name, type, nnode.line, nnode);
           continue;
         }
+        if (type.k === 'void') { C.error(nnode, "variable '" + name + "' declared void"); continue; }
+        if (type.k === 'struct' && !type.complete && spec.storage !== 'extern') { C.error(nnode, "storage size of '" + name + "' isn't known"); continue; }
         const prev = cur.get(name);
         if (prev && prev.kind !== 'enum' && !(spec.storage === 'extern')) C.error(nnode, "redeclaration of '" + name + "' with no linkage");
         if (spec.storage === 'extern') {

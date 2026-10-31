@@ -328,8 +328,23 @@
         case 'SizeofE': {
           const t = C.staticTypeOf(e.e);
           if (!t) { C.pushConst(T.ulong, 1n); return T.ulong; }
+          { const u = stripParen(e.e); if (u.k === 'Un' && u.op === '*') { const pt = C.staticTypeOf(u.e); if (pt && pt.k === 'ptr' && pt.to.k === 'struct' && !pt.to.complete) { C.error(e, "invalid application of 'sizeof' to incomplete type 'struct " + (pt.to.tag || '') + "'"); C.pushConst(T.ulong, 1n); return T.ulong; } } }
           if (t.k === 'struct' && !t.complete) C.error(e, "invalid application of 'sizeof' to incomplete type 'struct " + (t.tag || '') + "'");
           C.sizeCode(t); return T.ulong;
+        }
+        case 'Generic': {
+          let ct = C.staticTypeOf(e.e);
+          if (!ct) { C.error(e, 'invalid controlling expression in _Generic'); C.pushInt(0); return T.int; }
+          if (ct.k === 'array') ct = T.ptr(ct.of); else if (ct.k === 'func') ct = T.ptr(ct);
+          ct = T.unqual(ct);
+          let pick = null, def = null;
+          for (const a of e.assoc) {
+            if (!a.tn) { def = a; continue; }
+            if (!pick && T.same(T.unqual(C.typeOfName(a.tn)), ct)) pick = a;
+          }
+          pick = pick || def;
+          if (!pick) { C.error(e, "'_Generic' selector of type '" + typeStr(ct) + "' is not compatible with any association"); C.pushInt(0); return T.int; }
+          return C.expr(pick.e);
         }
         case 'AlignofT': { const t = C.typeOfName(e.tn); C.pushConst(T.ulong, BigInt(T.alignOf(t))); return T.ulong; }
         case 'Un': return C.genUnary(e);
