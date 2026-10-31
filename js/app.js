@@ -31,6 +31,22 @@
     inputStyle: 'contenteditable', autocorrect: false, autocapitalize: false, spellcheck: false
   });
   cm.setValue(files[cur].code);
+  // ---- theme (Paper / Slate) and text size ----
+  const root = document.documentElement;
+  function isDark() { const t = root.getAttribute('data-theme'); return t ? t === 'slate' : !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
+  function applyTheme(t) {
+    if (t === 'paper' || t === 'slate') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
+    $('#btnTheme').classList.toggle('is-dark', isDark());
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', isDark() ? '#1e2926' : '#e8ecf0');
+  }
+  applyTheme(LS.get('cs.theme', null));
+  $('#btnTheme').onclick = () => { const t = isDark() ? 'paper' : 'slate'; LS.set('cs.theme', t); applyTheme(t); };
+  const SIZES = [13, 14, 16, 18];
+  let fsIdx = Math.max(0, SIZES.indexOf(LS.get('cs.fs', 14)));
+  function applySize() { const f = SIZES[fsIdx]; root.style.setProperty('--fs', f + 'px'); root.style.setProperty('--lh', Math.round(f * 1.5) + 'px'); cm.refresh(); }
+  $('#fsSel').value = String(SIZES[fsIdx]);
+  $('#fsSel').addEventListener('change', (e) => { const i = SIZES.indexOf(+e.target.value); if (i >= 0) { fsIdx = i; LS.set('cs.fs', SIZES[i]); applySize(); } });
+  applySize();
   window.CSlayerComplete.attach(cm);
   // ---- auto-close brackets/quotes (works with Android keyboards, which don't send keypress events) ----
   const OPEN = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" }, CLOSERS = ')]}"\'';
@@ -336,25 +352,23 @@
     setState(m.ok ? 'ok' : 'error');
     const wrap = el('div', 'score');
     const hero = el('div', 'hero');
-    const ring = el('div', 'ring');
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 120 120');
-    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'circle'), fg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    for (const c of [bg, fg]) { c.setAttribute('cx', '60'); c.setAttribute('cy', '60'); c.setAttribute('r', '52'); }
-    bg.setAttribute('class', 'bg'); fg.setAttribute('class', 'fg'); svg.append(bg, fg);
+    const ring = el('div', 'grade');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 132 112'); svg.setAttribute('aria-hidden', 'true');
+    const fg = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    fg.setAttribute('d', 'M70 7C104 4 126 28 123 55C120 86 92 105 58 102C26 99 7 78 10 50C13 22 44 6 84 10C99 12 108 17 112 22'); svg.appendChild(fg);
     const num = el('div', 'num', '0'); const small = el('small', '', '/10'); num.appendChild(small);
     ring.append(svg, num);
-    const col = r.score >= 8 ? '#4cd68a' : r.score >= 5 ? '#ffb347' : '#ff5d6c'; fg.style.stroke = col; fg.style.color = col;
     const info = el('div'); info.append(el('h3', '', r.grade), el('p', '', r.summary));
     hero.append(ring, info); wrap.appendChild(hero);
     if (r.tips && r.tips.length) {
-      const tp = el('div', 'part tips'); tp.appendChild(el('div', 'hd', 'Quick wins'));
+      const tp = el('div', 'part tips'); tp.appendChild(el('div', 'hd', 'Quick wins — points you can win back'));
       const ul = document.createElement('ul');
       for (const t of r.tips) { const li = document.createElement('li'); const b = document.createElement('b'); b.textContent = '+' + t.gain + ' '; li.appendChild(b); li.appendChild(document.createTextNode((t.line ? 'Line ' + t.line + ': ' : '') + t.text)); ul.appendChild(li); }
       tp.appendChild(ul); wrap.appendChild(tp);
     }
     for (const part of r.parts) {
       const d = el('div', 'part'); const hd = el('div', 'hd'); hd.append(el('span', '', part.name), el('span', '', part.got + ' / ' + part.max));
-      const bar = el('div', 'bar'); const fill = document.createElement('i'); bar.appendChild(fill); d.append(hd, bar);
+      d.append(hd);
       if (part.notes.length) {
         const ul = document.createElement('ul');
         for (const n of part.notes) { const li = document.createElement('li'); if (n.line) { const b = document.createElement('b'); b.textContent = 'L' + n.line + ' '; li.appendChild(b); } li.appendChild(document.createTextNode(n.text)); ul.appendChild(li); }
@@ -363,11 +377,11 @@
       if (part.id === 'tests' && m.tests && m.tests.length) {
         for (const t of m.tests) { const tr = el('div', 'tres'); const s = el('span', t.pass ? 'p' : 'f', t.pass ? '✔ ' : '✖ '); tr.append(s, document.createTextNode(t.name + (t.pass ? '' : ' — ' + t.reason))); d.appendChild(tr); }
       }
-      wrap.appendChild(d); requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = (part.max ? Math.round(part.got / part.max * 100) : 0) + '%'; }));
+      wrap.appendChild(d);
     }
     wrap.appendChild(creditEl());
     box.appendChild(wrap);
-    requestAnimationFrame(() => requestAnimationFrame(() => { fg.style.strokeDashoffset = String(326.7 * (1 - r.score / 10)); }));
+    { const len = fg.getTotalLength ? Math.ceil(fg.getTotalLength()) : 400; fg.style.strokeDasharray = len; fg.style.strokeDashoffset = len; fg.getBoundingClientRect(); fg.style.transition = 'stroke-dashoffset 1.1s cubic-bezier(.45,.05,.25,1) .15s'; requestAnimationFrame(() => { fg.style.strokeDashoffset = '0'; }); }
     const t0 = performance.now();
     (function tick(now) { const k = Math.min(1, (now - t0) / 1200); const v = Math.round(r.score * (1 - Math.pow(1 - k, 3)) * 10) / 10; num.firstChild.nodeValue = (Number.isInteger(v) ? v : v.toFixed(1)); if (k < 1) requestAnimationFrame(tick); else num.firstChild.nodeValue = Number.isInteger(r.score) ? String(r.score) : r.score.toFixed(1); })(t0);
     if (!m.ok) put('', '');
@@ -389,7 +403,7 @@
 
   // ---------------- boot ----------------
   renderFiles(); renderTests(); saveTests(); renderProblems([]); drawBp();
-  put('C·Slayer — a C compiler & grader by Himanshu Singh\nPress ▶ Run, or ★ Score to grade your code.\n\n', 'm');
+  put('Write some C, then press Run. Press Grade to have it marked out of 10.\n\n', 'm');
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('service-worker.js').catch(() => { /* offline mode unavailable */ });
 })();
