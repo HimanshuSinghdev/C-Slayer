@@ -333,6 +333,7 @@
           C.sizeCode(t); return T.ulong;
         }
         case 'Generic': {
+          (function mark(n) { if (!n || typeof n !== 'object') return; if (n.k === 'Id') { const sy = C.lookup(n.name); if (sy && sy.kind === 'var' && !C.quiet) sy.used = true; } for (const key in n) { const v = n[key]; if (v && typeof v === 'object') { if (Array.isArray(v)) v.forEach(mark); else mark(v); } } })(e.e);
           let ct = C.staticTypeOf(e.e);
           if (!ct) { C.error(e, 'invalid controlling expression in _Generic'); C.pushInt(0); return T.int; }
           if (ct.k === 'array') ct = T.ptr(ct.of); else if (ct.k === 'func') ct = T.ptr(ct);

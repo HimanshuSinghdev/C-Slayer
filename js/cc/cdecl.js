@@ -479,7 +479,7 @@
               if (idx < 0 || (t.n !== null && idx >= t.n)) { C.error(errNode, 'array index in initializer exceeds array bounds'); cur.i++; continue; }
               if (it.designators.length > 1) {
                 const sub = { designators: it.designators.slice(1), e: it.e };
-                one(t.of, off + idx * T.sizeOf(t.of), [sub], { i: 0 }, true, true);
+                fillFrom(t.of, off + idx * T.sizeOf(t.of), [sub], { i: 0 }, true);
                 cur.i++; idx++; maxIdx = Math.max(maxIdx, idx); continue;
               }
             }
@@ -491,18 +491,23 @@
           const fT = (f) => f.bf ? Object.assign({}, f.type, { bf: f.bf }) : f.type;
           const fields = t.fields.filter(f => f.name !== null || f.anon);
           let fi = 0;
-          while (cur.i < items.length && fi < (t.isUnion ? 1 : fields.length)) {
+          while (cur.i < items.length && (fi < (t.isUnion ? 1 : fields.length) || (braced && items[cur.i].designators.length))) {
             const it = items[cur.i];
             if (it.designators.length) {
               if (!braced) break;
               const d = it.designators[0];
               if (d.field === undefined) { C.error(errNode, 'array index in non-array initializer'); cur.i++; continue; }
-              const k = fields.findIndex(f => f.name === d.field);
-              if (k < 0) { C.error(errNode, "unknown field '" + d.field + "' specified in initializer"); cur.i++; continue; }
+              let k = fields.findIndex(f => f.name === d.field);
+              if (k < 0) {
+                // the field may live inside an anonymous struct/union member
+                const j = fields.findIndex(f => f.anon && f.type.k === 'struct' && C.findMember(f.type, d.field));
+                if (j >= 0) { fillFrom(fields[j].type, off + fields[j].off, [{ designators: it.designators, e: it.e }], { i: 0 }, true); cur.i++; fi = j + 1; continue; }
+                C.error(errNode, "unknown field '" + d.field + "' specified in initializer"); cur.i++; continue;
+              }
               fi = k;
               if (it.designators.length > 1) {
                 const sub = { designators: it.designators.slice(1), e: it.e };
-                one(fT(fields[fi]), off + fields[fi].off, [sub], { i: 0 }, true, true);
+                fillFrom(fields[fi].type, off + fields[fi].off, [sub], { i: 0 }, true);
                 cur.i++; fi++; continue;
               }
             }

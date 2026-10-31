@@ -294,6 +294,102 @@
       return false;
     }
 
+    // ---------- dead-code elimination: loops whose only effect is feeding variables that are never read ----------
+    function analyzeDead(body, paramNames) {
+      const declCount = new Map(), cand = new Set(), occ = [];
+      const bad = new Set(paramNames);
+      const writeOnly = (e) => { e = stripParen(e); return e.k === 'Assign' && stripParen(e.l).k === 'Id' ? e : null; };
+      function visit(n, owner) {
+        if (!n || typeof n !== 'object') return;
+        if (Array.isArray(n)) { for (const x of n) visit(x, owner); return; }
+        switch (n.k) {
+          case 'Decl':
+            for (const it of n.items) {
+              let d = it.decl; const nm = d && d.name;
+              if (!nm) { let q = d; while (q && !q.name && q.inner) q = q.inner; if (q && q.name) bad.add(q.name); continue; }
+              declCount.set(nm, (declCount.get(nm) || 0) + 1);
+              const simple = n.spec && n.spec.base && n.spec.base.t === 'arith' && !n.spec.quals.volatile && !n.spec.storage && !d.ptrs.length && !d.inner && !d.suffix.length;
+              if (simple) cand.add(nm); else bad.add(nm);
+              if (it.init) visit(it.init, simple ? nm : null);
+            }
+            return;
+          case 'ExprStmt': { const a = writeOnly(n.e); if (a) { visit(a.r, stripParen(a.l).name); return; } visit(n.e, null); return; }
+          case 'For': {
+            visit(n.init, null); visit(n.c, null);
+            if (n.step) { const a = writeOnly(n.step); if (a) visit(a.r, stripParen(a.l).name); else visit(n.step, null); }
+            visit(n.body, null); return;
+          }
+          case 'Id': occ.push({ name: n.name, owner }); return;
+        }
+        for (const key in n) { if (key === 'line' || key === 'col') continue; const v = n[key]; if (v && typeof v === 'object') visit(v, owner); }
+      }
+      visit(body, null);
+      const dead = new Set([...cand].filter(x => declCount.get(x) === 1 && !bad.has(x) && !C.scopes[0].has(x)));
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const o of occ) if (dead.has(o.name) && (o.owner === null || !dead.has(o.owner)) && o.owner !== o.name) { dead.delete(o.name); changed = true; }
+      }
+      return dead;
+    }
+    // can this expression be dropped when its value is unused? (no calls, no memory access, cannot trap)
+    function pureExpr(e, locals) {
+      e = stripParen(e);
+      switch (e.k) {
+        case 'Num': case 'Chr': return true;
+        case 'Id': return locals.has(e.name);
+        case 'Cast': return pureExpr(e.e, locals) && !!C.typeOfName && (() => { try { const t = C.typeOfName(e.tn); return t.k === 'int' || t.k === 'float'; } catch (x) { return false; } })();
+        case 'Un': return ['-', '+', '~', '!'].includes(e.op) && pureExpr(e.e, locals);
+        case 'Bin': {
+          if (!pureExpr(e.l, locals) || !pureExpr(e.r, locals)) return false;
+          if (['+', '-', '*', '&', '|', '^', '==', '!=', '<', '>', '<=', '>='].includes(e.op)) return true;
+          if (e.op === '/' || e.op === '%') { const d = C.constInt(e.r); return d !== null && d !== 0n && d !== -1n; }
+          return false;
+        }
+        case 'Logic': return pureExpr(e.l, locals) && pureExpr(e.r, locals);
+        case 'Cond': return pureExpr(e.c, locals) && pureExpr(e.a, locals) && pureExpr(e.b, locals);
+      }
+      return false;
+    }
+    /** true when `for` can be removed entirely: bounded counting loop whose body only updates dead locals with pure values */
+    function deadLoop(s) {
+      const fn = C.fn; if (!fn || !fn.dead || C.debug || C.sys || !s.init || s.init.k !== 'Decl' || s.init.items.length !== 1 || !s.c || !s.step) return false;
+      const it = s.init.items[0], iv = it.decl && it.decl.name; if (!iv || !it.init || it.decl.ptrs.length || it.decl.suffix.length || it.decl.inner) return false;
+      if (s.init.spec.quals.volatile || s.init.spec.storage) return false;
+      let ity; try { ity = C.applyDeclarator(C.baseType(s.init.spec), it.decl).type; } catch (x) { return false; }
+      if (ity.k !== 'int' || ity.size < 4) return false;
+      const lo = C.constInt(it.init); if (lo === null) return false;
+      const max = ity.signed ? (1n << BigInt(ity.size * 8 - 1)) - 1n : (1n << BigInt(ity.size * 8)) - 1n;
+      const c = stripParen(s.c); if (c.k !== 'Bin') return false;
+      let op = c.op, bound;
+      if (stripParen(c.l).k === 'Id' && stripParen(c.l).name === iv) bound = C.constInt(c.r);
+      else if (stripParen(c.r).k === 'Id' && stripParen(c.r).name === iv) { bound = C.constInt(c.l); op = { '<': '>', '>': '<', '<=': '>=', '>=': '<=', '!=': '!=' }[op]; }
+      else return false;
+      if (bound === null || !['<', '<=', '>', '>=', '!='].includes(op)) return false;
+      const st = stripParen(s.step); let dir = 0, amt = 1n;
+      if ((st.k === 'Post' || (st.k === 'Un' && (st.op === '++' || st.op === '--'))) && stripParen(st.e).k === 'Id' && stripParen(st.e).name === iv) dir = st.op === '++' ? 1 : -1;
+      else if (st.k === 'Assign' && (st.op === '+=' || st.op === '-=') && stripParen(st.l).k === 'Id' && stripParen(st.l).name === iv) { const a = C.constInt(st.r); if (a === null || a <= 0n) return false; amt = a; dir = st.op === '+=' ? 1 : -1; }
+      else return false;
+      if (dir > 0 && !(op === '<' || op === '<=' || (op === '!=' && lo <= bound))) return false;
+      if (dir < 0 && !(op === '>' || op === '>=' || (op === '!=' && lo >= bound))) return false;
+      if (dir > 0 && bound + amt > max) return false;
+      if (dir < 0 && ity.signed && bound - amt < -max - 1n) return false;
+      if (dir < 0 && !ity.signed && bound - amt < 0n) return false;
+      const items = s.body.k === 'Block' ? s.body.items : [s.body];
+      const locals = new Set([iv, ...fn.dead]);
+      // every local that the body reads must be a plain local scalar of this function
+      for (const nm of fn.localNames) locals.add(nm);
+      for (const stm of items) {
+        if (stm.k === 'Empty' || (stm.k === 'ExprStmt' && !stm.e)) continue;
+        if (stm.k !== 'ExprStmt') return false;
+        const a = stripParen(stm.e);
+        if (a.k !== 'Assign' || !['=', '+=', '-=', '*=', '^=', '|=', '&='].includes(a.op)) return false;
+        const t = stripParen(a.l); if (t.k !== 'Id' || !fn.dead.has(t.name)) return false;
+        if (!pureExpr(a.r, locals)) return false;
+      }
+      for (const stm of items) if (stm.k === 'ExprStmt' && stm.e) { const sy = C.lookup(stripParen(stripParen(stm.e).l).name); if (sy) { sy.assigned = true; sy.written = true; } }
+      return true;
+    }
+
     C.genStmt = function (s) {
       C.line = s.line || C.line;
       C.curNode = s;
@@ -350,6 +446,7 @@
           return;
         }
         case 'For': {
+          if (deadLoop(s)) return;
           C.pushScope();
           if (s.init) { if (s.init.k === 'Decl') C.genLocalDecl(s.init); else C.genStmt(s.init); }
           const lp = C.newLoop(false); const Ltop = C.newLabel();
@@ -568,6 +665,9 @@
       for (const p of pinfo) if (p.type.k === 'ptr' && C.hasVLA(p.type.to)) C.materializeVLA(p.type.to);
 
       const body = node.body;
+      { const pn = []; try { for (const p of node.decl.suffix[0].params) if (p.decl && p.decl.name) pn.push(p.decl.name); } catch (x) { /* none */ }
+        fn.dead = C.noOpt ? new Set() : analyzeDead(body, pn);
+        fn.localNames = new Set(); (function collect(n) { if (!n || typeof n !== 'object') return; if (Array.isArray(n)) { n.forEach(collect); return; } if (n.k === 'Decl') for (const it of n.items) { let q = it.decl; while (q && !q.name && q.inner) q = q.inner; if (q && q.name && n.spec && n.spec.base && n.spec.base.t === 'arith' && !n.spec.quals.volatile && !q.ptrs.length && !q.suffix.length) fn.localNames.add(q.name); } for (const key in n) if (key !== 'line' && key !== 'col') { const v = n[key]; if (v && typeof v === 'object') collect(v); } })(body); }
       C.genBlockItems(body.items);
       // fall off the end
       const returns = alwaysReturns(body);
