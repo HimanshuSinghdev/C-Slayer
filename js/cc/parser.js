@@ -159,7 +159,7 @@
             if (isP(';')) { next(); // anonymous struct/union member
               node.fields.push({ spec, decls: [], anon: true, line: spec.line }); continue; }
             for (;;) {
-              const d = parseDeclarator(false);
+              const d = isP(':') ? { name: null, nameTok: null, ptrs: [], inner: null, suffix: [], line: cur().line, col: cur().col } : parseDeclarator(false);
               let bits = null;
               if (accept(':')) bits = parseAssign();
               decls.push({ decl: d, bits });
@@ -670,7 +670,7 @@
           return { k: 'FuncDef', spec, decl, body, line: startTok.line, col: startTok.col, endLine: body.endLine, nameTok: decl.nameTok, sys: !!startTok.sys };
         }
         if (isFn && !topLevel && isP('{')) { err(cur(), 'nested functions are not supported'); throw new Syntax(); }
-        if (decl.name) declareName(decl.name, spec.storage === 'typedef');
+        { let dn = decl; while (dn && !dn.name && dn.inner) dn = dn.inner; if (dn && dn.name) declareName(dn.name, spec.storage === 'typedef'); }
         let init = null;
         if (accept('=')) init = parseInitializer();
         items.push({ decl, init, line: decl.line });

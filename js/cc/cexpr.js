@@ -51,8 +51,16 @@
     /** convert an integer of any class on top of the stack to class I (for indexes / shift counts) */
     C.toIndex = function (t) { const c = cn(t); if (c !== 0) e1(OP.CONV, c * 8 + 0); };
     C.loadKind = (t) => T.kindOf(t);
-    C.emitLoad = function (t) { if (isScalar(t)) e1(OP.LOAD, T.kindOf(t)); };
-    C.emitStore = function (t, keep) { e1(keep ? OP.STORE : OP.STOREP, T.kindOf(t)); };
+    const bfPack = (t) => (T.kindOf(t) & 15) | (t.bf.shift << 4) | ((t.bf.bits - 1) << 10);
+    C.emitLoad = function (t) { if (t.bf) { e1(OP.LOADBF, bfPack(t)); return; } if (isScalar(t)) e1(OP.LOAD, T.kindOf(t)); };
+    C.emitStore = function (t, keep) { if (t.bf) { e1(OP.STOREBF, bfPack(t), keep ? 1 : 0); return; } e1(keep ? OP.STORE : OP.STOREP, T.kindOf(t)); };
+    /** type of a loaded bit-field value (integer promotion of the bit-field) */
+    C.bfValueType = function (t) {
+      if (!t.bf) return t;
+      const bits = t.bf.bits;
+      if (bits < 32) return T.int;
+      const b = Object.assign({}, t); delete b.bf; return b;
+    };
     C.truthy = function (t) { // value on stack -> something JZ/JNZ can test
       t = decay(t);
       const c = cn(t);
@@ -264,7 +272,8 @@
       const m = C.findMember(st, e.name);
       if (!m) { C.error(e, "'" + typeStr(st) + "' has no member named '" + e.name + "'"); return T.int; }
       if (m.off) { C.pushInt(m.off); e1(OP.ADD_U); }
-      return st.c && !m.type.c ? T.qual(m.type, true) : m.type;
+      const rt = st.c && !m.type.c ? T.qual(m.type, true) : m.type;
+      return m.bf ? Object.assign({}, rt, { bf: m.bf }) : rt;
     };
     /** address of lvalue, or the address of the temporary holding an rvalue struct */
     C.lvOrValue = function (e) {
@@ -307,7 +316,7 @@
         case 'Str': { C.pushInt(C.internString(e.bytes)); return T.array(T.char, e.bytes.length + 1); }
         case 'Id': return C.genId(e);
         case 'Index': { const t = C.genIndexAddr(e); C.emitLoad(t); return t; }
-        case 'Mem': { const t = C.genMemAddr(e); C.emitLoad(t); return t; }
+        case 'Mem': { const t = C.genMemAddr(e); C.emitLoad(t); return C.bfValueType(t); }
         case 'Call': return C.genCall(e);
         case 'Cast': return C.genCast(e);
         case 'SizeofT': {
@@ -414,6 +423,7 @@
           }
           if (!C.isLvalue(inner)) { C.error(e, 'lvalue required as unary \'&\' operand'); C.pushInt(0); return T.ptr(T.int); }
           const t = C.lv(inner);
+          if (t.bf) { C.error(e, "cannot take address of bit-field '" + inner.name + "'"); return T.ptr(T.int); }
           return T.ptr(t);
         }
         case '*': {

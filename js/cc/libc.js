@@ -554,7 +554,10 @@
   def('exit', (vm, a) => { throw new CC.ExitSignal(a[0] | 0); });
   def('_Exit', (vm, a) => { throw new CC.ExitSignal(a[0] | 0); });
   def('abort', (vm) => { vm.emit(2, ASCII('Aborted\n')); vm.fail('abort', 'The program called abort()'); });
-  def('atexit', (vm, a) => 0);
+  def('atexit', (vm, a) => {
+    const f = num(a[0]); if (f < CC.MEM.FUNC_BASE || (f - CC.MEM.FUNC_BASE) % CC.MEM.FUNC_STRIDE !== 0 || !vm.funcs[(f - CC.MEM.FUNC_BASE) / CC.MEM.FUNC_STRIDE]) return 1;
+    if (vm.atexitQ.length >= 32) return 1; vm.atexitQ.push(f); return 0;
+  });
   def('__assert_fail', (vm, a) => {
     const expr = vm.decodeBytes(cstrArg(vm, a[0])), file = vm.decodeBytes(cstrArg(vm, a[1])), func = vm.decodeBytes(cstrArg(vm, a[3]));
     vm.emit(2, ASCII('a.out: ' + file + ':' + a[2] + ': ' + (func ? func + ': ' : '') + "Assertion `" + expr + "' failed.\n"));
@@ -595,7 +598,12 @@
     const s = vm.readCStr(ptr); const str = String.fromCharCode.apply(null, s.slice(0, 400));
     const m = /^\s*([+-]?(?:inf(?:inity)?|nan|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?))/i.exec(str);
     let v = 0, used = 0;
-    if (m) { const t = m[1].toLowerCase(); used = m[0].length; v = /inf/.test(t) ? (t[0] === '-' ? -Infinity : Infinity) : /nan/.test(t) ? NaN : parseFloat(t); }
+    const hx = /^\s*([+-]?)0[xX]([0-9a-fA-F]+)(?:\.([0-9a-fA-F]*))?(?:[pP]([+-]?\d+))?/.exec(str);
+    if (hx) {
+      let mant = parseInt(hx[2], 16); const fr = hx[3] || '';
+      for (let i = 0; i < fr.length; i++) mant += parseInt(fr[i], 16) / Math.pow(16, i + 1);
+      v = mant * Math.pow(2, hx[4] ? +hx[4] : 0); if (hx[1] === '-') v = -v; used = hx[0].length;
+    } else if (m) { const t = m[1].toLowerCase(); used = m[0].length; v = /inf/.test(t) ? (t[0] === '-' ? -Infinity : Infinity) : /nan/.test(t) ? NaN : parseFloat(t); }
     if (endp) { vm.chk(endp, 8, true); vm.dv.setUint32(endp, ptr + used, true); vm.dv.setUint32(endp + 4, 0, true); }
     return v;
   }

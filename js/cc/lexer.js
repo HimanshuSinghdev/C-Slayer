@@ -184,6 +184,7 @@
     if ((m = /^0[bB]([01]+)([uUlL]*)$/.exec(text))) return intResult(BigInt('0b' + m[1]), 2, m[2], text);
     if ((m = /^(0[0-7]*)([uUlL]*)$/.exec(text))) return intResult(m[1].length > 1 ? BigInt('0o' + m[1].slice(1)) : 0n, 8, m[2], text);
     if ((m = /^([1-9][0-9]*)([uUlL]*)$/.exec(text))) return intResult(BigInt(m[1]), 10, m[2], text);
+    if ((m = /^0[0-7]*([89])[0-9]*[uUlL]*$/.exec(text))) return { error: "invalid digit '" + m[1] + "' in octal constant" };
     if ((m = /^((?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)([fFlL]?)$/.exec(text))) {
       return { kind: 'float', value: parseFloat(m[1]), f: /f/i.test(m[2]), l: /l/i.test(m[2]) };
     }

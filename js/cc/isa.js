@@ -33,7 +33,9 @@
     // memory blocks
     'MEMCPY', 'MEMZERO', 'ALLOCA', 'LINE', 'HALT',
     // fused (created only by the post-pass in compile.js; never emitted directly)
-    'JCLL', 'JCLC', 'ADDLC', 'JCMP'
+    'JCLL', 'JCLC', 'ADDLC', 'JCMP',
+    // bit-fields: operand packs kind | shift<<4 | (bits-1)<<10
+    'LOADBF', 'STOREBF'
   ];
   const OP = {};
   NAMES.forEach((n, i) => { OP[n] = i; });
@@ -44,7 +46,8 @@
   set(['ICONST', 'KCONST', 'LEAL', 'LOAD', 'STORE', 'STOREP', 'NEG', 'BNOT', 'LNOT', 'TOBOOL', 'CONV', 'NARROW', 'JMP', 'JZ', 'JNZ', 'SWITCH', 'CALLI', 'ENTER', 'MEMCPY', 'MEMZERO', 'ALLOCA', 'LINE'], 1);
   set(['LLOAD', 'LSTORE', 'LSTOREP', 'CALL', 'CALLB', 'ADDLC'], 2);
   set(['JCLL', 'JCLC'], 4);
-  set(['JCMP'], 2);
+  set(['JCMP', 'STOREBF'], 2);
+  set(['LOADBF'], 1);
 
   const CLS = { I: 0, U: 1, L: 2, UL: 3, F: 4, D: 5 };
   const BINOP = { '+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV', '%': 'MOD', '&': 'AND', '|': 'OR', '^': 'XOR', '<<': 'SHL', '>>': 'SHR' };

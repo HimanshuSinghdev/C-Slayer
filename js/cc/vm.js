@@ -139,7 +139,7 @@
       this.frames = [];
       this.curFn = -1;
       this.steps = 0;
-      this.done = false; this.exitCode = 0;
+      this.done = false; this.exitCode = 0; this.atexitQ = []; this.exiting = false; this.exitVal = null;
       // ---- io ----
       this.inBytes = []; this.inPos = 0; this.inEOF = false;
       this.outQ = []; this.outBytes = 0;
@@ -364,12 +364,57 @@
       return fd;
     }
 
+    // ---------- bit-fields (operand packs kind | shift<<4 | (bits-1)<<10) ----------
+    bfLoad(a, pk) {
+      const k = pk & 15, shift = (pk >> 4) & 63, bits = ((pk >> 10) & 63) + 1, signed = (k & 1) === 0 && k < 8;
+      const size = k <= 1 ? 1 : k <= 3 ? 2 : k <= 5 ? 4 : 8;
+      this.chk(a, size, false);
+      if (this.poison[a] | this.poison[a + size - 1]) this.poisonError(a, size, false);
+      if (size === 8) {
+        let v = (this.dv.getBigUint64(a, true) >> BigInt(shift)) & ((1n << BigInt(bits)) - 1n);
+        if (signed) v = BigInt.asIntN(bits, v);
+        return nI(v);
+      }
+      const raw = size === 1 ? this.u8[a] : size === 2 ? this.dv.getUint16(a, true) : this.dv.getUint32(a, true);
+      let v = Math.floor(raw / Math.pow(2, shift)) % Math.pow(2, bits);
+      if (signed && v >= Math.pow(2, bits - 1)) v -= Math.pow(2, bits);
+      return v;
+    }
+    bfStore(a, v, pk) {
+      const k = pk & 15, shift = (pk >> 4) & 63, bits = ((pk >> 10) & 63) + 1, signed = (k & 1) === 0 && k < 8;
+      const size = k <= 1 ? 1 : k <= 3 ? 2 : k <= 5 ? 4 : 8;
+      this.chk(a, size, true);
+      if (this.poison[a] | this.poison[a + size - 1]) this.poisonError(a, size, true);
+      if (size === 8) {
+        const m = ((1n << BigInt(bits)) - 1n), raw = this.dv.getBigUint64(a, true);
+        const f = BigInt.asUintN(64, BigInt(v)) & m;
+        this.dv.setBigUint64(a, (raw & ~(m << BigInt(shift))) | (f << BigInt(shift)), true);
+        return nI(signed ? BigInt.asIntN(bits, f) : f);
+      }
+      const mod = Math.pow(2, bits), vn = typeof v === 'bigint' ? Number(BigInt.asUintN(32, v)) : v;
+      const f = ((vn % mod) + mod) % mod;
+      const raw = size === 1 ? this.u8[a] : size === 2 ? this.dv.getUint16(a, true) : this.dv.getUint32(a, true);
+      const sh = Math.pow(2, shift);
+      const nw = raw - (Math.floor(raw / sh) % mod) * sh + f * sh;
+      if (size === 1) this.u8[a] = nw; else if (size === 2) this.dv.setUint16(a, nw, true); else this.dv.setUint32(a, nw, true);
+      return signed && f >= mod / 2 ? f - mod : f;
+    }
+
     // ---------- execution ----------
     /** runs up to `budget` jumps/calls; returns 'done' | 'yield' | 'wait' | 'error' */
     run(budget) {
       try { return this.exec(budget); }
       catch (e) {
-        if (e instanceof ExitSignal) { this.done = true; this.exitCode = e.code; return 'done'; }
+        if (e instanceof ExitSignal) {
+          if (this.atexitQ.length && !this.exiting) {
+            this.exiting = true;     // exit() called: run the handlers, then halt with this code
+            this.exitVal = e.code | 0; this.S[this.ssp++] = 0;
+            this.frames.push({ ret: this.prog.haltPc, fp: this.fp, sp: this.sp, fn: this.curFn });
+            const fa = this.atexitQ.pop(), fi = ((fa - MEM.FUNC_BASE) / MEM.FUNC_STRIDE) | 0, f = this.funcs[fi];
+            this.curFn = fi; this.pc = f.entry; return 'yield';
+          }
+          this.done = true; this.exitCode = e.code; return 'done';
+        }
         if (e instanceof RunError) { this.error = e; this.done = true; return 'error'; }
         if (e instanceof RangeError && /call stack|Maximum/i.test(e.message)) { const w = this.where(); this.error = Object.assign(new RunError('internal', 'The program is too deeply nested to run.'), w); this.done = true; return 'error'; }
         const w = this.where();
@@ -653,7 +698,15 @@
             break;
           }
           case 103 /*LINE*/: { const ln = code[pc++]; if (this.dbg !== null && this.dbgCheck(ln, frames.length)) { save(); return 'break'; } break; }
-          case 104 /*HALT*/: { v = S[--ssp]; save(); this.exitCode = typeof v === 'bigint' ? Number(BigInt.asIntN(32, v)) : v | 0; this.done = true; return 'done'; }
+          case 104 /*HALT*/: { v = S[--ssp];
+            if (this.exitVal !== null) v = this.exitVal; else if (this.atexitQ.length) this.exitVal = v;
+            if (this.atexitQ.length) {   // run atexit handlers (last registered first), then come back here
+              const fa = this.atexitQ.pop(), fi = ((fa - MEM.FUNC_BASE) / MEM.FUNC_STRIDE) | 0, f = this.funcs[fi];
+              ssp++; frames.push({ ret: pc - 1, fp, sp, fn: this.curFn }); this.curFn = fi; pc = f.entry; break;
+            }
+             save(); this.exitCode = typeof v === 'bigint' ? Number(BigInt.asIntN(32, v)) : v | 0; this.done = true; return 'done'; }
+          case 109 /*LOADBF*/: { const pk = code[pc++]; save(); S[ssp - 1] = self.bfLoad(S[ssp - 1], pk); break; }
+          case 110 /*STOREBF*/: { const pk = code[pc++], keep = code[pc++]; v = S[--ssp]; a = S[--ssp]; save(); v = self.bfStore(a, v, pk); if (keep) S[ssp++] = v; break; }
           // ---- fused instructions (see peephole() in compile.js). Frame scalars never overlap redzones, so no checks. ----
           case 105 /*JCLL*/: {
             const x = dv.getInt32(fp + code[pc + 1], true), y = dv.getInt32(fp + code[pc + 2], true);

@@ -109,7 +109,13 @@
       }
       case 'struct': {
         const kids = [];
-        for (const f of t.fields) { if (depth > 3) break; const k = show(vm, f.type, a + f.off, depth + 1); k.name = f.name; kids.push(k); }
+        for (const f of t.fields) {
+          if (depth > 3) break;
+          let k;
+          if (f.bf) { k = { type: (f.type && f.type.name ? f.type.name : 'int') + ':' + f.bf.bits }; try { k.text = String(vm.bfLoad(a + f.off, (f.bf.kind & 15) | (f.bf.shift << 4) | ((f.bf.bits - 1) << 10))); } catch (e) { k.text = '?'; } }
+          else k = show(vm, f.type, a + f.off, depth + 1);
+          k.name = f.name; kids.push(k);
+        }
         out.kids = kids;
         out.text = '{' + kids.slice(0, 4).map(k => k.name + '=' + k.text).join(', ') + (kids.length > 4 ? ', …' : '') + '}';
         break;

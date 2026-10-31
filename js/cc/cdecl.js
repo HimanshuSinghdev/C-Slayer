@@ -48,7 +48,7 @@
     };
 
     function layoutStruct(node, st) {
-      let off = 0, maxAlign = 1, size = 0;
+      let off = 0, maxAlign = 1, size = 0, bp = 0;     // bp: bit position of the next bit-field
       const fields = [];
       for (const f of node.fields) {
         const base = C.baseType(f.spec);
@@ -56,14 +56,33 @@
           // anonymous struct / union member: its fields are reachable directly
           if (base.k !== 'struct') { C.error(f, 'declaration does not declare anything', 'warning'); continue; }
           const al = base.align || 1;
+          off = Math.max(off, Math.ceil(bp / 8));
           off = st.isUnion ? 0 : alignUp(off, al);
           fields.push({ name: null, type: base, off, anon: true });
-          if (st.isUnion) size = Math.max(size, base.size); else off += base.size;
+          if (st.isUnion) size = Math.max(size, base.size); else { off += base.size; bp = off * 8; }
           maxAlign = Math.max(maxAlign, al);
           continue;
         }
         for (const d of f.decls) {
-          if (d.bits) { C.error(f, 'bit-fields are not supported by C-Slayer yet'); continue; }
+          if (d.bits) {
+            const r0 = C.applyDeclarator(base, d.decl, { field: true });
+            const bt = r0.type, bn = r0.name || null;
+            if (!(bt.k === 'int' || bt.k === 'enum' || bt.isBool)) { C.error(f, "bit-field" + (bn ? " '" + bn + "'" : '') + " has invalid type"); continue; }
+            const w = C.constInt(d.bits);
+            if (w === null) { C.error(f, "bit-field" + (bn ? " '" + bn + "'" : '') + " width is not an integer constant"); continue; }
+            const us = T.sizeOf(bt), wn = Number(w);
+            if (wn < 0) { C.error(f, "negative width in bit-field" + (bn ? " '" + bn + "'" : '')); continue; }
+            if (wn > us * 8) { C.error(f, "width of" + (bn ? " '" + bn + "'" : ' bit-field') + " exceeds its type"); continue; }
+            if (bn && fields.some(x => x.name === bn)) { C.error(f, "duplicate member '" + bn + "'"); continue; }
+            const ub = us * 8;
+            if (st.isUnion) { if (wn > 0 && bn) fields.push({ name: bn, type: bt, off: 0, bf: { shift: 0, bits: wn, kind: T.kindOf(bt) } }); size = Math.max(size, us); maxAlign = Math.max(maxAlign, us); continue; }
+            if (wn === 0) { bp = alignUp(bp, ub); off = bp / 8; maxAlign = Math.max(maxAlign, us); continue; }
+            if ((bp % ub) + wn > ub) bp = alignUp(bp, ub);
+            const unitOff = Math.floor(bp / ub) * us, shift = bp - unitOff * 8;
+            if (bn) fields.push({ name: bn, type: bt, off: unitOff, bf: { shift, bits: wn, kind: T.kindOf(bt) } });
+            bp += wn; off = Math.ceil(bp / 8); maxAlign = Math.max(maxAlign, us);
+            continue;
+          }
           const r = C.applyDeclarator(base, d.decl, { field: true });
           if (!r.name) continue;
           let t = r.type;
@@ -73,12 +92,14 @@
           if (t.vla) { C.error(f, "field '" + r.name + "' has variable size"); continue; }
           if (fields.some(x => x.name === r.name)) { C.error(f, "duplicate member '" + r.name + "'"); continue; }
           const al = T.alignOf(t), sz = T.sizeOf(t);
+          off = Math.max(off, Math.ceil(bp / 8));
           const o = st.isUnion ? 0 : alignUp(off, al);
           fields.push({ name: r.name, type: t, off: o });
-          if (st.isUnion) size = Math.max(size, sz); else off = o + sz;
+          if (st.isUnion) size = Math.max(size, sz); else { off = o + sz; bp = off * 8; }
           maxAlign = Math.max(maxAlign, al);
         }
       }
+      off = Math.max(off, Math.ceil(bp / 8));
       st.fields = fields; st.align = maxAlign;
       st.size = alignUp(st.isUnion ? size : off, maxAlign);
       st.complete = true;
@@ -328,6 +349,13 @@
       let x = BigInt.asUintN(size * 8, v);
       for (let i = 0; i < size; i++) { C.gdata[o + i] = Number(x & 255n); x >>= 8n; }
     };
+    C.gwriteBF = function (addr, t, v) {
+      const o = addr - C.globalBase, size = t.size, bf = t.bf;
+      let raw = 0n; for (let i = size - 1; i >= 0; i--) raw = (raw << 8n) | BigInt(C.gdata[o + i] || 0);
+      const m = (1n << BigInt(bf.bits)) - 1n;
+      raw = (raw & ~(m << BigInt(bf.shift))) | ((BigInt.asUintN(64, v) & m) << BigInt(bf.shift));
+      for (let i = 0; i < size; i++) { C.gdata[o + i] = Number(raw & 255n); raw >>= 8n; }
+    };
     C.gwriteF = function (addr, size, v) {
       const dv = new DataView(new ArrayBuffer(8));
       if (size === 4) dv.setFloat32(0, v, true); else dv.setFloat64(0, v, true);
@@ -338,8 +366,8 @@
     // ---------- member lookup ----------
     C.findMember = function (st, name) {
       for (const f of st.fields) {
-        if (f.name === name) return { type: f.type, off: f.off };
-        if (f.anon) { const r = C.findMember(f.type, name); if (r) return { type: r.type, off: f.off + r.off }; }
+        if (f.name === name) return { type: f.type, off: f.off, bf: f.bf || null };
+        if (f.anon) { const r = C.findMember(f.type, name); if (r) return { type: r.type, off: f.off + r.off, bf: r.bf || null }; }
       }
       return null;
     };
@@ -460,6 +488,7 @@
           }
           if (braced && cur.i < items.length && t.n !== null && idx >= lim) { C.error(errNode, 'excess elements in array initializer', 'warning'); cur.i = items.length; }
         } else {
+          const fT = (f) => f.bf ? Object.assign({}, f.type, { bf: f.bf }) : f.type;
           const fields = t.fields.filter(f => f.name !== null || f.anon);
           let fi = 0;
           while (cur.i < items.length && fi < (t.isUnion ? 1 : fields.length)) {
@@ -473,12 +502,12 @@
               fi = k;
               if (it.designators.length > 1) {
                 const sub = { designators: it.designators.slice(1), e: it.e };
-                one(fields[fi].type, off + fields[fi].off, [sub], { i: 0 }, true, true);
+                one(fT(fields[fi]), off + fields[fi].off, [sub], { i: 0 }, true, true);
                 cur.i++; fi++; continue;
               }
             }
             const f = fields[fi];
-            one(f.type, off + f.off, items, cur, false);
+            one(fT(f), off + f.off, items, cur, false);
             fi++;
           }
           if (braced && cur.i < items.length) { C.error(errNode, 'excess elements in ' + (t.isUnion ? 'union' : 'struct') + ' initializer', 'warning'); cur.i = items.length; }

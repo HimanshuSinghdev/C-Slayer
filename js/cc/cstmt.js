@@ -87,8 +87,8 @@
           e1(OP.MEMCPY, T.sizeOf(t)); e1(OP.POP);
         } else {
           if (!T.isScalar(t)) { C.error(expr, 'invalid initializer'); return; }
-          C.rvTo(expr, t, { kind: 'init' });
-          e1(OP.LSTOREP, T.kindOf(t), off + boff);
+          if (t.bf) { e1(OP.LEAL, off + boff); C.rvTo(expr, t, { kind: 'init' }); C.emitStore(t, false); }
+          else { C.rvTo(expr, t, { kind: 'init' }); e1(OP.LSTOREP, T.kindOf(t), off + boff); }
         }
       }, node);
     };
@@ -116,7 +116,7 @@
           if (r.k === 'addr') { if (t.size === 8) C.gwrite(a, 8, BigInt(r.v)); else C.error(expr, 'initializer element is not computable at load time'); return; }
           let v = r.k === 'float' ? BigInt(Math.trunc(r.v)) : r.v;
           if (t.isBool) v = v !== 0n ? 1n : 0n;
-          C.gwrite(a, t.size, v);
+          if (t.bf) C.gwriteBF(a, t, v); else C.gwrite(a, t.size, v);
         } else C.error(expr, 'invalid initializer');
       }, node);
     };

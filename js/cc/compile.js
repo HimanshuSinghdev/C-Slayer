@@ -241,7 +241,7 @@
       case 'array': return { k: 'array', n: t.n === null ? 0 : t.n, of: typeDesc(t.of, depth + 1), name, size: T.sizeOf(t) };
       case 'struct': {
         const d = { k: 'struct', name, size: t.size, isUnion: !!t.isUnion, fields: [] };
-        if (depth < 4 && t.fields) for (const f of t.fields.slice(0, 40)) if (f.name) d.fields.push({ name: f.name, off: f.off, type: typeDesc(f.type, depth + 1) });
+        if (depth < 4 && t.fields) for (const f of t.fields.slice(0, 40)) if (f.name) d.fields.push({ name: f.name, off: f.off, type: typeDesc(f.type, depth + 1), bf: f.bf || null });
         return d;
       }
       default: return { k: t.k, name };
@@ -276,6 +276,7 @@
     for (let i = 0; i < Math.min(np, 3); i++) args[i]();
     C.emit(OP.CALL, m.idx, Math.min(np, 3));
     C.emit(OP.HALT);
+    const haltPc = C.code.length - 1;
     const symAddr = new Map();
     for (const [name, s] of C.scopes[0]) if (s.kind === 'var') symAddr.set(name, s.addr);
     const gdata = Uint8Array.from(C.gdata);
@@ -285,7 +286,7 @@
       code: Int32Array.from(C.code), lines: Int32Array.from(C.lines), consts: C.consts,
       funcs: C.funcs, builtins: C.builtinList, rodata: Uint8Array.from(C.rodata), gdata,
       globalSize: gdata.length, globalRedzones: C.redzones, symAddr, startPc, libcBuf, debug: dbg,
-      mainIdx: m.idx
+      mainIdx: m.idx, haltPc
     };
   }
 
