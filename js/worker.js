@@ -108,10 +108,10 @@ async function runOnce(program, stdin, limitMs, heapMB) {
   const vm = new CC.VM(program, { heapMB: heapMB || 64 });
   vm.feedInput(stdin, true);
   const s = { vm, stopped: false, spent: 0 };
-  let out = '', outLen = 0;
-  const status = await drive(s, limitMs, (fd, str) => { if (fd === 1 && outLen < 400000) { out += str; outLen += str.length; } }, null);
+  let out = '', outLen = 0, errLen = 0;
+  const status = await drive(s, limitMs, (fd, str) => { if (fd === 1 && outLen < 400000) { out += str; outLen += str.length; } else if (fd === 2) errLen += str.length; }, null);
   return {
-    out, status, exit: status === 'done' ? vm.exitCode : null,
+    out, status, exit: status === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin,
     runError: status === 'error' ? plainErr(vm.error, null) : status === 'timeout' ? { kind: 'timeout', message: 'timeout', line: 0 } : null,
     leaks: status === 'done' ? plainLeaks(vm) : []
   };
@@ -137,7 +137,7 @@ async function handleScore(m) {
       tests.push({ name, pass, reason, got: r.out.slice(0, 400), expected: exp.slice(0, 400) });
     }
   }
-  const result = CC.score({ compile: c, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks } : null, tests: tests.length ? tests : null });
+  const result = CC.score({ compile: c, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput } : null, tests: tests.length ? tests : null });
   postMessage({ type: 'score-result', id, ok: c.ok, errors: plainErrors(c.errors), result, tests, run: run ? { out: run.out.slice(0, 4000), exit: run.exit, error: run.runError } : null });
 }
 

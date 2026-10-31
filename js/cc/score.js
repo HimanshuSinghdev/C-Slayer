@@ -104,11 +104,12 @@
       else if (k === 'abort' || k === 'assert') dock(rt, 1.5, 'Program aborted: ' + m, line);
       else dock(rt, 2.6, 'Memory/arithmetic error at runtime: ' + m, line);
     } else if (rr.exit !== 0 && rr.exit !== null && rr.exit !== undefined) {
-      dock(rt, 0.5, 'main() exited with status ' + rr.exit + ' (0 means success).');
+      if (rr.noInput && rr.hadStderr) good(rt, 'Exited with status ' + rr.exit + ' after reporting an error on empty input — that is correct behaviour.');
+      else dock(rt, 0.5, 'main() exited with status ' + rr.exit + ' (0 means success).');
     } else good(rt, 'Ran to completion with exit status 0.');
     if (rr && !rr.runError && rr.leaks && rr.leaks.length) {
       const bytes = rr.leaks.reduce((a, l) => a + (l.size || 0), 0);
-      dock(rt, Math.min(1, 0.4 + 0.2 * rr.leaks.length), 'Memory leak: ' + rr.leaks.length + ' block' + (rr.leaks.length === 1 ? '' : 's') + ' (' + bytes + ' bytes) never freed.', rr.leaks[0].line || 0);
+      dock(rt, Math.min(1.2, 0.8 + 0.2 * rr.leaks.length), 'Memory leak: ' + rr.leaks.length + ' block' + (rr.leaks.length === 1 ? '' : 's') + ' (' + bytes + ' bytes) never freed.', rr.leaks[0].line || 0);
     }
     parts.push(rt);
 
@@ -121,7 +122,8 @@
       for (const t of tests.filter(t => !t.pass).slice(0, 4)) tp.notes.push({ text: 'Failed: ' + (t.name || 'test') + (t.reason ? ' — ' + t.reason : ''), line: 0, delta: 0 });
     } else {
       // without a reference we can only reward a clean run
-      tp.got = rr && !rr.runError && (rr.exit === 0 || rr.exit == null) ? 2.0 : rr ? 0.5 : 1.5;
+      tp.got = rr && !rr.runError && (rr.exit === 0 || rr.exit == null) ? 2.0 : rr && rr.noInput && rr.hadStderr && !rr.runError ? 1.5 : rr ? 0.5 : 1.5;
+      if (warns.some(w => /format '%.*expects/.test(w.msg) || /used uninitialized/.test(w.msg))) { tp.got = Math.max(0, tp.got - 1.0); tp.notes.push({ text: 'A warning (wrong printf/scanf type or uninitialized variable) means the output is probably wrong.', line: 0, delta: -1.0 }); }
       good(tp, 'No test cases were provided, so correctness is estimated from a clean run only. Add test cases for a precise grade.');
     }
     parts.push(tp);
@@ -129,7 +131,7 @@
     // ---------------- compiler warnings (1.5) ----------------
     const wp = part('warnings', 'Compiler warnings', 1.5);
     const heavy = /uninitialized|format|return-local|implicit|incompatible|int-conversion|pointer|array-bounds|return-type|sequence|Wsign|parentheses/;
-    for (const w of warns.slice(0, 12)) dock(wp, heavy.test(w.msg) ? 0.5 : 0.25, w.msg, w.line);
+    for (const w of warns.slice(0, 12)) dock(wp, heavy.test(w.msg) ? 0.75 : 0.25, w.msg, w.line);
     if (warns.length > 12) dock(wp, 0.5, (warns.length - 12) + ' more warnings');
     if (!warns.length) good(wp, 'No warnings — clean build.');
     parts.push(wp);
@@ -255,7 +257,7 @@
   };
 
   function gradeWord(s) {
-    return s >= 9.5 ? 'Outstanding' : s >= 8 ? 'Excellent' : s >= 6.5 ? 'Good' : s >= 5 ? 'Fair' : s >= 3 ? 'Needs work' : 'Not yet';
+    return s >= 9.5 ? 'Outstanding' : s >= 8.5 ? 'Excellent' : s >= 6.5 ? 'Good' : s >= 5 ? 'Fair' : s >= 3 ? 'Needs work' : 'Not yet';
   }
 
   function summarise(score, parts, rr) {
