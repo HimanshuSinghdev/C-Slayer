@@ -91,8 +91,10 @@
 
   window.CSlayerComplete = {
     attach(cm) {
-      cm.on('inputRead', (c, ch) => {
-        if (c.state.completionActive) return;
+      // 'changes' fires for every input path (desktop keys and Android/IME text, which never fires 'inputRead')
+      cm.on('changes', (c, list) => {
+        const ch = list[list.length - 1];
+        if (!ch || ch.origin !== '+input' || c.state.completionActive) return;
         const t = ch.text && ch.text[0];
         if (!t || !(/[\w<]/.test(t))) return;
         clearTimeout(c._hintT);
