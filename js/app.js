@@ -423,5 +423,21 @@
   renderFiles(); renderTests(); saveTests(); renderProblems([]); drawBp();
   put('Write some C, then press Run. Press Grade to have it marked out of 10.\n\n', 'm');
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('service-worker.js').catch(() => { /* offline mode unavailable */ });
+  // Auto-update: look for a new version whenever the app is opened or comes back to the front; when one takes over, reload
+  // into it (never in the middle of a run; the code is already saved to this device).
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    const had = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    const reloadWhenIdle = () => {
+      if (reloaded) return;
+      if (!$('#btnStop').hidden || debugging) { setTimeout(reloadWhenIdle, 3000); return; }
+      reloaded = true; try { save(); } catch (e) { /* */ } location.reload();
+    };
+    navigator.serviceWorker.register('service-worker.js').then((reg) => {
+      const check = () => { try { reg.update(); } catch (e) { /* */ } };
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+      setInterval(check, 30 * 60 * 1000);
+    }).catch(() => { /* offline mode unavailable */ });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) reloadWhenIdle(); });
+  }
 })();
