@@ -311,11 +311,23 @@
     function analyzeDead(body, paramNames) {
       const declCount = new Map(), cand = new Set(), occ = [];
       const bad = new Set(paramNames);
+      let idx = 0, hasGoto = false; const loopStack = [], loops = [];
       const writeOnly = (e) => { e = stripParen(e); return e.k === 'Assign' && stripParen(e.l).k === 'Id' ? e : null; };
       function visit(n, owner) {
         if (!n || typeof n !== 'object') return;
         if (Array.isArray(n)) { for (const x of n) visit(x, owner); return; }
+        if (n.k === 'For' || n.k === 'While' || n.k === 'DoWhile') {
+          const rec = { node: n, lo: idx, hi: 0, outerLo: loopStack.length ? loopStack[0].lo : idx };
+          loopStack.push(rec); loops.push(rec);
+          visit0(n, owner);
+          rec.hi = idx; loopStack.pop(); return;
+        }
+        visit0(n, owner);
+      }
+      function visit0(n, owner) {
         switch (n.k) {
+          case 'Goto': case 'Label': hasGoto = true; break;
+          case 'Un': if (n.op === '&') { const q = stripParen(n.e); if (q && q.k === 'Id') bad.add(q.name); } break;
           case 'Decl':
             for (const it of n.items) {
               let d = it.decl; const nm = d && d.name;
@@ -332,7 +344,7 @@
             if (n.step) { const a = writeOnly(n.step); if (a) visit(a.r, stripParen(a.l).name); else visit(n.step, null); }
             visit(n.body, null); return;
           }
-          case 'Id': occ.push({ name: n.name, owner }); return;
+          case 'Id': occ.push({ name: n.name, owner, idx: idx++ }); return;
         }
         for (const key in n) { if (key === 'line' || key === 'col') continue; const v = n[key]; if (v && typeof v === 'object') visit(v, owner); }
       }
@@ -341,6 +353,20 @@
       for (let changed = true; changed;) {
         changed = false;
         for (const o of occ) if (dead.has(o.name) && (o.owner === null || !dead.has(o.owner)) && o.owner !== o.name) { dead.delete(o.name); changed = true; }
+      }
+      // variables that are not read after a given loop (and not read by an enclosing loop's next round)
+      dead.after = new Map();
+      if (!hasGoto) {
+        const pool = [...cand].filter(x => declCount.get(x) === 1 && !bad.has(x) && !C.scopes[0].has(x));
+        for (const L of loops) {
+          if (L.node.k !== 'For') continue;
+          const ok = new Set(pool);
+          for (const o of occ) {
+            if (!ok.has(o.name) || o.idx < L.outerLo || (o.idx >= L.lo && o.idx < L.hi)) continue;
+            if (o.owner !== o.name) ok.delete(o.name);
+          }
+          dead.after.set(L.node, ok);
+        }
       }
       return dead;
     }
@@ -388,7 +414,8 @@
       if (dir < 0 && ity.signed && bound - amt < -max - 1n) return false;
       if (dir < 0 && !ity.signed && bound - amt < 0n) return false;
       const items = s.body.k === 'Block' ? s.body.items : [s.body];
-      const locals = new Set([iv, ...fn.dead]);
+      const after = (fn.dead.after && fn.dead.after.get(s)) || new Set(), isDead = (nm) => fn.dead.has(nm) || after.has(nm);
+      const locals = new Set([iv, ...fn.dead, ...after]);
       // every local that the body reads must be a plain local scalar of this function
       for (const nm of fn.localNames) locals.add(nm);
       for (const stm of items) {
@@ -396,11 +423,61 @@
         if (stm.k !== 'ExprStmt') return false;
         const a = stripParen(stm.e);
         if (a.k !== 'Assign' || !['=', '+=', '-=', '*=', '^=', '|=', '&='].includes(a.op)) return false;
-        const t = stripParen(a.l); if (t.k !== 'Id' || !fn.dead.has(t.name)) return false;
+        const t = stripParen(a.l); if (t.k !== 'Id' || !isDead(t.name)) return false;
         if (!pureExpr(a.r, locals)) return false;
       }
       for (const stm of items) if (stm.k === 'ExprStmt' && stm.e) { const sy = C.lookup(stripParen(stripParen(stm.e).l).name); if (sy) { sy.assigned = true; sy.written = true; } }
       return true;
+    }
+
+    // ---- closed form for counting sums: for (int i=A; i<B; i++) s += i;  (or s += c;  or s++;) ----
+    // Wrapping arithmetic is exactly what repeating the additions would give, so the answer is identical, just instant.
+    function mentions(n, name) {
+      if (!n || typeof n !== 'object') return false;
+      if (Array.isArray(n)) return n.some(x => mentions(x, name));
+      if (n.k === 'Id' && n.name === name) return true;
+      for (const key in n) if (key !== 'line' && key !== 'col' && n[key] && typeof n[key] === 'object' && mentions(n[key], name)) return true;
+      return false;
+    }
+    function closedSum(s) {
+      const fn = C.fn; if (!fn || C.debug || C.sys || C.noOpt || !s.init || s.init.k !== 'Decl' || s.init.items.length !== 1 || !s.c || !s.step) return null;
+      const it = s.init.items[0], iv = it.decl && it.decl.name; if (!iv || !it.init || it.decl.ptrs.length || it.decl.suffix.length || it.decl.inner) return null;
+      if (s.init.spec.quals.volatile || s.init.spec.storage) return null;
+      let ity; try { ity = C.applyDeclarator(C.baseType(s.init.spec), it.decl).type; } catch (x) { return null; }
+      if (ity.k !== 'int' || !ity.signed || ity.size < 4) return null;
+      const items = (s.body.k === 'Block' ? s.body.items : [s.body]).filter(x => !(x.k === 'Empty' || (x.k === 'ExprStmt' && !x.e)));
+      if (items.length !== 1 || items[0].k !== 'ExprStmt') return null;
+      const a = stripParen(items[0].e); let tgt, mode, cexp = null;
+      if (a.k === 'Assign' && a.op === '+=') { tgt = stripParen(a.l); const r = stripParen(a.r); if (r.k === 'Id' && r.name === iv) mode = 0; else { mode = 1; cexp = a.r; } }
+      else if ((a.k === 'Post' || (a.k === 'Un' && a.op === '++')) && a.op === '++') { tgt = stripParen(a.e); mode = 1; cexp = { k: 'Num', kind: 'int', value: 1n, base: 10, u: false, l: 0, line: s.line, col: 0 }; }
+      else return null;
+      if (!tgt || tgt.k !== 'Id' || tgt.name === iv) return null;
+      const sy = C.lookup(tgt.name); if (!sy || sy.kind !== 'var' || sy.storage !== 'local' || !sy.type || sy.type.k !== 'int' || sy.type.size < 1) return null;
+      const c = stripParen(s.c); if (c.k !== 'Bin' || (c.op !== '<' && c.op !== '<=')) return null;
+      const cl = stripParen(c.l); if (cl.k !== 'Id' || cl.name !== iv) return null;
+      const st = stripParen(s.step); const isInc = ((st.k === 'Post' || st.k === 'Un') && st.op === '++' && stripParen(st.e).k === 'Id' && stripParen(st.e).name === iv) ||
+        (st.k === 'Assign' && st.op === '+=' && stripParen(st.l).k === 'Id' && stripParen(st.l).name === iv && C.constInt(st.r) === 1n);
+      if (!isInc) return null;
+      const locals = new Set(fn.localNames); for (const p of fn.params) if (p.name) locals.add(p.name);
+      locals.delete(tgt.name); locals.delete(iv);
+      const lo = it.init, hi = c.r;
+      if (!pureExpr(lo, locals) || !pureExpr(hi, locals) || (cexp && !pureExpr(cexp, locals))) return null;
+      for (const n of [lo, hi, cexp]) if (n && (mentions(n, tgt.name) || mentions(n, iv))) return null;
+      const ln = s.line;
+      const num = (v, ll) => ({ k: 'Num', kind: 'int', value: BigInt(v), base: 10, u: false, l: ll ? 2 : 0, line: ln, col: 0 });
+      const bin = (op, l, r) => ({ k: 'Bin', op, l, r, line: ln, col: 0 });
+      const par = (e) => ({ k: 'Paren', e, line: ln, col: 0 });
+      const L1 = () => bin('*', num(1, true), par(lo));
+      const hiE = c.op === '<' ? bin('*', num(1, true), par(hi)) : bin('+', bin('*', num(1, true), par(hi)), num(1));
+      const nRaw = () => par(bin('-', par(hiE), par(L1())));
+      const n = () => par({ k: 'Cond', c: bin('>', nRaw(), num(0)), a: nRaw(), b: num(0), line: ln, col: 0 });
+      let sum;
+      if (mode === 0) {
+        const t = () => par(bin('-', bin('+', bin('*', num(2), L1()), n()), num(1)));   // 2*lo + n - 1
+        sum = { k: 'Cond', c: bin('==', par(bin('&', n(), num(1))), num(0)), a: bin('*', par(bin('/', n(), num(2))), t()), b: bin('*', n(), par(bin('/', t(), num(2)))), line: ln, col: 0 };
+      } else sum = bin('*', n(), par(bin('*', num(1, true), par(cexp))));
+      const rhs = bin('+', { k: 'Id', name: tgt.name, line: ln, col: 0 }, par(sum));
+      return { k: 'ExprStmt', e: { k: 'Assign', op: '=', l: { k: 'Id', name: tgt.name, line: ln, col: 0 }, r: rhs, line: ln, col: 0 }, line: ln };
     }
 
     C.genStmt = function (s) {
@@ -476,6 +553,7 @@
         }
         case 'For': {
           if (deadLoop(s)) return;
+          { const cf = closedSum(s); if (cf) { C.genStmt(cf); return; } }
           C.pushScope();
           if (s.init) { if (s.init.k === 'Decl') C.genLocalDecl(s.init); else C.genStmt(s.init); }
           const lp = C.newLoop(false); const Ltop = C.newLabel();
