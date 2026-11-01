@@ -281,6 +281,17 @@
       return false;
     }
     C.alwaysReturns = alwaysReturns;
+    /** a statement that can be generated into a scratch buffer and dropped: no labels, case labels or jumps out of it */
+    function deadBranchOk(n) {
+      let ok = true;
+      (function w(x) {
+        if (!ok || !x || typeof x !== 'object') return;
+        if (Array.isArray(x)) { x.forEach(w); return; }
+        if (x.k === 'Label' || x.k === 'Case' || x.k === 'Default' || x.k === 'Goto' || x.k === 'Break' || x.k === 'Continue' || x.k === 'Switch') { ok = false; return; }
+        for (const key in x) if (key !== 'type' && key !== 'sym') w(x[key]);
+      })(n);
+      return ok;
+    }
 
     function noEffect(e) {
       e = stripParen(e);
@@ -420,6 +431,22 @@
         }
         case 'If': {
           if (stripParen(s.c) === s.c && s.c.k === 'Assign' && s.c.op === '=') C.warn(s.c, 'suggest parentheses around assignment used as truth value [-Wparentheses]');
+          if (!C.noOpt && !C.debug) {
+            // constant condition: emit only the branch that can run (the other one is still checked for errors, then dropped)
+            const cv = C.constVal(stripParen(s.c));
+            if (cv && cv.k === 'int') {
+              const live = cv.v !== 0n ? s.a : s.b, dead = cv.v !== 0n ? s.b : s.a;
+              if (!dead || deadBranchOk(dead)) {
+                if (dead) {
+                  const sc = C.code, sl = C.lines, sf = C.fixups.length;
+                  C.code = []; C.lines = [];
+                  try { C.genScoped(dead); } finally { C.code = sc; C.lines = sl; for (let i = sf; i < C.fixups.length; i++) C.fixups[i].pc = -1; }  // library/undefined calls stay linked (and reported) but patch nothing
+                }
+                if (live) C.genScoped(live);
+                return;
+              }
+            }
+          }
           const Lelse = C.newLabel(), Lend = C.newLabel();
           C.cond(s.c); C.jump(OP.JZ, Lelse);
           C.genScoped(s.a);
