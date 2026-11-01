@@ -40,6 +40,14 @@
     const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', isDark() ? '#1e2926' : '#e8ecf0');
   }
   applyTheme(LS.get('cs.theme', null));
+  // wipe the whole editor in one tap; it is one undo step (Ctrl+Z) so a slip is recoverable
+  $('#btnClear').onclick = () => {
+    if (debugging) return toast('Stop debugging first');
+    if (!cm.getValue().trim()) return toast('Nothing to clear');
+    if (!confirm('Clear all code in ' + files[cur].name + '? (Ctrl+Z brings it back)')) return;
+    cm.operation(() => cm.replaceRange('', { line: 0, ch: 0 }, { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length }));
+    cm.focus(); save(); toast('Cleared');
+  };
   $('#btnTheme').onclick = () => { const t = isDark() ? 'paper' : 'slate'; LS.set('cs.theme', t); applyTheme(t); };
   const SIZES = [13, 14, 16, 18];
   let fsIdx = Math.max(0, SIZES.indexOf(LS.get('cs.fs', 14)));
