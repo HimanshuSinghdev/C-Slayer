@@ -738,5 +738,6 @@
   }
 
   CC.VM = VM; CC.RunError = RunError; CC.ExitSignal = ExitSignal; CC.WAIT = WAIT;
+  CC.VMH = { conv, ld64, st64, nI, big, wrapL, wrapUL, f2i, f2u, SAFE, I32_MIN, I64_MIN, P_STACK, WAIT, ExitSignal, RunError };
   CC.VMLIMITS = { HEAP_BYTES, STACK_BYTES, OUT_LIMIT };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

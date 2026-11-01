@@ -15,6 +15,7 @@
       fn.frame = C.alignUp(fn.frame, Math.max(align || 1, 1));
       const off = fn.frame;
       fn.frame += Math.max(size, 0);
+      if (fn.slots) fn.slots.push({ off, size: Math.max(size, 0) });
       return off;
     };
     /** local array: red zone before and after so out-of-bounds accesses are caught */
@@ -25,6 +26,7 @@
       fn.redzones.push({ off: off - 16, len: 16, side: 'before', name, arrSize: size });
       fn.redzones.push({ off: off + size, len: 16, side: 'after', name, arrSize: size });
       fn.frame = C.alignUp(off + size + 16, 8);
+      if (fn.slots) fn.slots.push({ off, size });
       return off;
     };
 
@@ -625,7 +627,7 @@
         if (!(type.ret.k === 'int')) C.warn(node, "return type of 'main' is not 'int' [-Wmain]");
         C.mainSym = sym;
       }
-      const fn = { name, sym, rec, frame: 0, redzones: rec.redzones, labels: new Map(), ret: type.ret, params: [], line: node.line };
+      const fn = { name, sym, rec, frame: 0, redzones: rec.redzones, labels: new Map(), ret: type.ret, params: [], line: node.line, slots: [] };
       C.fn = fn; C.loops = []; C.switches = [];
       rec.entry = C.code.length;
       C.line = node.line;
@@ -684,6 +686,7 @@
       for (const [n, l] of fn.labels) if (l.defined && !l.used && !C.sys) C.warn({ line: l.line }, "label '" + n + "' defined but not used [-Wunused-label]");
       C.code[enterPos + 1] = C.alignUp(fn.frame, 16);
       rec.frameSize = C.alignUp(fn.frame, 16);
+      rec.slots = fn.slots;
       rec.endLine = body.endLine || node.line;
       C.fn = null;
     };

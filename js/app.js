@@ -267,7 +267,17 @@
     $('#btnRun').hidden = true; $('#btnStop').hidden = false; $('#btnScore').disabled = true;
     runId++; ensureWorker().postMessage({ type: 'run', id: runId, src: cm.getValue(), limits, files: otherFiles() });
   }
-  function stop() { if (worker) worker.postMessage({ type: 'stop', id: runId }); }
+  function stop() {
+    if (!worker) return;
+    const rid = runId, w = worker;
+    w.postMessage({ type: 'stop', id: rid });
+    // a Turbo run is one long synchronous stretch and cannot read the message: if nothing answers, restart the engine
+    setTimeout(() => {
+      if (worker !== w || runId !== rid || $('#btnStop').hidden) return;
+      try { w.terminate(); } catch (e) { /* */ } worker = null;
+      put('\n[stopped]\n', 'm'); setState('idle'); finish();
+    }, 500);
+  }
   $('#btnRun').onclick = run; $('#btnStop').onclick = stop;
 
   function onMsg(m) {

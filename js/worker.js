@@ -4,7 +4,7 @@
  * Everything is plain data. No eval, no network.
  */
 'use strict';
-importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js', 'cc/inspect.js',
+importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js', 'cc/turbo.js', 'cc/inspect.js',
   'cc/headers.js', 'cc/libc.js', 'cc/cdecl.js', 'cc/cexpr.js', 'cc/cstmt.js', 'cc/cfmt.js', 'cc/compile.js', 'cc/score.js');
 
 const RUN_LIMIT_MS = 30000;     // default CPU time for an interactive run (time spent waiting for input is not counted)
@@ -72,18 +72,37 @@ async function handleRun(m, debugging) {
   postMessage({ type: 'diag', id, ok: c.ok, errors: plainErrors(c.errors) });
   if (!c.ok) { postMessage({ type: 'end', id, compiled: false }); return; }
   const lim = limitsOf(m);
-  const vm = new CC.VM(c.program, { heapMB: lim.heapMB });
+  let vm = new CC.VM(c.program, { heapMB: lim.heapMB });
   const s = session = { id, vm, stopped: false, spent: 0, wake: null, resume: null };
   if (debugging) vm.dbgSet('into', m.breakpoints);
   let status;
-  for (;;) {
-    status = await drive(s, lim.timeMs,
-      (fd, str) => postMessage({ type: 'out', id, fd, s: str }),
+  const skip = { 1: 0, 2: 0 };      // output already shown by a Turbo attempt that had to be redone
+  const post = (fd, str) => {
+    if (skip[fd] > 0) { const k = Math.min(skip[fd], str.length); skip[fd] -= k; str = str.slice(k); if (!str.length) return; }
+    postMessage({ type: 'out', id, fd, s: str });
+  };
+  // Turbo: translate to JS and let the browser's JIT run it. Programs that read the keyboard stay on the VM.
+  if (!debugging && !m.noTurbo && CC.Turbo && !CC.Turbo.usesInput(c.program)) {
+    let mod = null; const t0 = performance.now(), sent = { 1: 0, 2: 0 };
+    const flush = () => { for (const q of vm.drainOutput()) { sent[q.fd] = (sent[q.fd] || 0) + q.s.length; post(q.fd, q.s); } };
+    try { mod = CC.Turbo.build(vm, { tick() { flush(); if (performance.now() - t0 > lim.timeMs) throw new CC.Turbo.TurboTimeout(); } }); } catch (e) { mod = null; }
+    if (mod) {
+      status = CC.Turbo.run(vm, mod); flush();
+      if (status === 'overflow') {   // JS stack is shallower than the C stack: redo on the VM, skipping what was already shown
+        skip[1] = sent[1]; skip[2] = sent[2];
+        vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB }); status = undefined;
+      }
+    }
+  }
+  while (status === undefined) {
+    status = await drive(s, lim.timeMs, post,
       () => new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }));
-    if (status !== 'break') break;
-    postMessage({ type: 'paused', id, snap: vm.inspect() });
-    await new Promise(res => { s.resume = res; });
-    if (s.stopped) { status = 'stopped'; break; }
+    if (status === 'break') {
+      postMessage({ type: 'paused', id, snap: vm.inspect() });
+      await new Promise(res => { s.resume = res; });
+      if (s.stopped) { status = 'stopped'; break; }
+      status = undefined;
+    }
   }
   if (session !== s) return;       // superseded
   let err = status === 'error' ? plainErr(vm.error, c.fileTable) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
@@ -105,10 +124,25 @@ function normalise(t) {
 }
 
 async function runOnce(program, stdin, limitMs, heapMB) {
-  const vm = new CC.VM(program, { heapMB: heapMB || 64 });
+  let vm = new CC.VM(program, { heapMB: heapMB || 64 });
   vm.feedInput(stdin, true);
-  const s = { vm, stopped: false, spent: 0 };
   let out = '', outLen = 0, errLen = 0;
+  if (CC.Turbo) {      // stdin is complete, so nothing can block: Turbo is safe here
+    let mod = null; const t0 = performance.now();
+    const take = () => { for (const q of vm.drainOutput()) { if (q.fd === 1 && outLen < 400000) { out += q.s; outLen += q.s.length; } else if (q.fd === 2) errLen += q.s.length; } };
+    try { mod = CC.Turbo.build(vm, { tick() { take(); if (performance.now() - t0 > limitMs) throw new CC.Turbo.TurboTimeout(); } }); } catch (e) { mod = null; }
+    if (mod) {
+      const st = CC.Turbo.run(vm, mod); take();
+      if (st !== 'overflow') return {
+        out, status: st, exit: st === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin,
+        runError: st === 'error' ? plainErr(vm.error, null) : st === 'timeout' ? { kind: 'timeout', message: 'timeout', line: 0 } : null,
+        leaks: st === 'done' ? plainLeaks(vm) : []
+      };
+      out = ''; outLen = 0; errLen = 0;
+      vm = new CC.VM(program, { heapMB: heapMB || 64 }); vm.feedInput(stdin, true);
+    }
+  }
+  const s = { vm, stopped: false, spent: 0 };
   const status = await drive(s, limitMs, (fd, str) => { if (fd === 1 && outLen < 400000) { out += str; outLen += str.length; } else if (fd === 2) errLen += str.length; }, null);
   return {
     out, status, exit: status === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin,
