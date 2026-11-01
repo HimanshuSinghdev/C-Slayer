@@ -225,6 +225,7 @@
   // ---------------- output ----------------
   const out = $('#out');
   function resetOutput() { out.textContent = ''; outLen = 0; $('#inForm').hidden = true; }
+  $('#btnClearOut').onclick = () => { const wasInput = !$('#inForm').hidden; resetOutput(); if ($('#btnStop').hidden) setState('idle'); else if (wasInput) $('#inForm').hidden = false; };
   function put(text, cls) {
     if (outLen > MAX_OUT) return;
     outLen += text.length;

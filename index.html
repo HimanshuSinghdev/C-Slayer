@@ -51,7 +51,7 @@
       <button role="tab" data-tab="score">Score</button>
     </div>
     <div id="p-console" class="tabpane on">
-      <label class="starter">Start from an example <select id="samples" aria-label="Load a sample"><option value="">Choose…</option></select></label>
+      <div class="conrow"><label class="starter">Start from an example <select id="samples" aria-label="Load a sample"><option value="">Choose…</option></select></label><button type="button" class="chip" id="btnClearOut" title="Clear the output below">Clear output</button></div>
       <pre id="out" class="out" aria-live="polite"></pre>
       <form id="inForm" class="inline-in" hidden autocomplete="off">
         <span class="prompt">›</span><input id="inLine" type="text" inputmode="text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Program input">

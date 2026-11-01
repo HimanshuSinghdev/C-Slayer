@@ -191,3 +191,7 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 
 .CodeMirror :focus-visible,.CodeMirror-code:focus-visible,.CodeMirror-scroll:focus-visible{outline:none}
 .editor:focus-within{box-shadow:inset 0 2px 0 var(--ember)}
+
+.conrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.conrow .starter{flex:1;min-width:0}
+.conrow .chip{flex:none}
