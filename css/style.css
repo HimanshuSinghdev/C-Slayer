@@ -178,7 +178,6 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 .hblock{position:relative;font-family:var(--mono);font-size:12px;padding:5px 8px;margin-bottom:4px;border:1.5px solid var(--line);border-radius:5px;overflow:hidden}.hblock i{position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--ok) 18%,transparent)}.hblock span{position:relative}.hblock.freed i{background:color-mix(in srgb,var(--err) 20%,transparent)}.hblock.freed{color:var(--dim);text-decoration:line-through}
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-@media(max-width:380px){.by{display:none}}
 @media(max-width:360px){.top{padding-left:8px;padding-right:8px}.hero{flex-direction:column;align-items:flex-start}}
 @media(max-height:500px) and (orientation:landscape){.split{flex-direction:row}.editor{flex:1 1 55%;border-bottom:0;border-right:1px solid var(--line)}.bottom{flex:1 1 45%}.by{display:none}.top{padding-top:3px;padding-bottom:3px}.keys{padding-top:3px;padding-bottom:3px}.keys button{min-height:32px}.files{padding-top:3px;padding-bottom:3px}}
 
@@ -195,3 +194,14 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 .conrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .conrow .starter{flex:1;min-width:0}
 .conrow .chip{flex:none}
+
+/* header: the credit can never run under the Run button. The brand takes whatever room the buttons leave;
+   when that is too little for the handwritten credit, the credit steps aside (it is also on the Grade tab). */
+.top .actions{flex:none}
+.brand{flex:1 1 0;min-width:0;overflow:hidden;container-type:inline-size;container-name:brand}
+.wordbox{min-width:0;padding-bottom:3px}
+@container brand (max-width:172px){.by{display:none}}
+.chip svg{display:block;margin:0 auto}
+#fileSel{min-width:0;flex:1 1 auto}
+@media(max-width:360px){.files{gap:4px;padding-left:8px;padding-right:8px}.files .chip{min-width:30px;padding:7px 5px}#fileSel{min-width:78px}}
+#fileSel{min-height:38px}
