@@ -26,7 +26,7 @@
     ['switch', 'switch', 'switch (|) {\n    case 0:\n        break;\n    default:\n        break;\n}'],
     ['struct', 'struct definition', 'typedef struct {\n    |\n} Name;'],
     ['func', 'function', 'int name(int a) {\n    |\n    return 0;\n}'],
-    ['inc', '#include <stdio.h>', '#include <|.h>'],
+    ['inc', '#include <stdio.h>', '#include <|>'],
     ['array', 'int array[n]', 'int arr[|];'],
     ['readint', 'read an int', 'int n;\nif (scanf("%d", &n) != 1) {\n    |return 1;\n}'],
     ['mallocchk', 'malloc + NULL check', 'int *p = malloc(| * sizeof *p);\nif (p == NULL) {\n    return 1;\n}'],
@@ -46,17 +46,22 @@
     return out;
   }
   function insertTemplate(cm, tpl, from, to) {
-    const MARK = '\u2063';
-    const text = tpl.replace('|', MARK);
+    // work out where the cursor goes from the template itself, so no marker character ever confuses the indenter
+    const k = tpl.indexOf('|'), before = k < 0 ? tpl : tpl.slice(0, k), text = k < 0 ? tpl : before + tpl.slice(k + 1);
+    const bl = before.split('\n'), mLine = bl.length - 1, mCol = bl[mLine].length, mLead = /^ */.exec(bl[mLine])[0].length;
     cm.operation(() => {
       cm.replaceRange(text, from, to);
       const lastLine = from.line + text.split('\n').length - 1;
       for (let l = from.line + 1; l <= lastLine; l++) cm.indentLine(l, 'smart');
-      for (let l = from.line; l <= lastLine; l++) {
-        const i = cm.getLine(l).indexOf(MARK);
-        if (i >= 0) { cm.replaceRange('', { line: l, ch: i }, { line: l, ch: i + 1 }); cm.setCursor({ line: l, ch: i }); return; }
+      if (k < 0) { cm.setCursor({ line: lastLine, ch: cm.getLine(lastLine).length }); return; }
+      const ln = from.line + mLine; let line = cm.getLine(ln);
+      let ind = mLine === 0 ? from.ch + mCol : /^\s*/.exec(line)[0].length + Math.max(0, mCol - mLead);
+      if (mLine > 0 && !line.trim()) {     // an empty line the cursor lands on: indent it the way the language would
+        let n = -1; try { const m = cm.getMode(); if (m.indent) n = m.indent(cm.getStateAfter(ln - 1), '', ''); } catch (e) { /* */ }
+        if (typeof n !== 'number' || n < 0) n = mLead + (cm.getOption('indentUnit') || 4) * 0;
+        cm.replaceRange(' '.repeat(n), { line: ln, ch: 0 }, { line: ln, ch: line.length }); line = cm.getLine(ln); ind = n;
       }
-      cm.setCursor({ line: lastLine, ch: cm.getLine(lastLine).length });
+      cm.setCursor({ line: ln, ch: Math.min(ind, line.length) });
     });
   }
   function snippetItem(label, detail, tpl, cls) {
@@ -70,7 +75,8 @@
     if (inc) {
       const start = CodeMirror.Pos(w.from.line, cm.getCursor().ch - inc[1].length);
       const list = HEADERS.filter(h => h.indexOf(inc[1]) === 0).map(h => ({ text: h + '>', displayText: h, className: 'hint-hdr' }));
-      return list.length ? { list, from: start, to: cm.getCursor() } : null;
+      const cu = cm.getCursor(), nx = cm.getLine(cu.line).charAt(cu.ch) === '>' ? 1 : 0;   // a '>' that is already there is replaced, not doubled
+      return list.length ? { list, from: start, to: CodeMirror.Pos(cu.line, cu.ch + nx) } : null;
     }
     const tok = cm.getTokenAt(cm.getCursor());
     if (tok.type && /comment|string/.test(tok.type)) return null;
@@ -80,12 +86,15 @@
     const lw = w.word.toLowerCase();
     const list = [], used = new Set();
     const add = (it, key) => { if (!used.has(key) && list.length < 9) { used.add(key); list.push(it); } };
-    for (const [n, d, t] of SNIPPETS) if (n.indexOf(lw) === 0 && n !== w.word + '#') add(snippetItem(n, d, t, 'hint-snip'), n);
-    for (const [n, d, t] of FUNCS) if (n.indexOf(lw) === 0) add(snippetItem(n, d, t, 'hint-fn'), n);
+    // statements (for, if, main …) only where a statement can start; inside an expression only functions make sense
+    const lead = w.before.trim(), stmtStart = lead === '' || lead === 'else' || /[;{}]$/.test(lead);
+    const fix = (t) => stmtStart ? t : t.replace(/^FILE \*fp = /, '').replace(/;$/, '');
+    if (stmtStart) for (const [n, d, t] of SNIPPETS) if (n.indexOf(lw) === 0 && (lead !== 'else' || n === 'if')) add(snippetItem(n, d, t, 'hint-snip'), n);
+    for (const [n, d, t] of FUNCS) if (n.indexOf(lw) === 0) add(snippetItem(n, d, fix(t), 'hint-fn'), n);
     for (const k of KEYWORDS) if (k.indexOf(lw) === 0 && k !== w.word) add({ text: k, displayText: k, className: 'hint-kw' }, k);
     for (const d of docWords(cm, w.word)) if (d.toLowerCase().indexOf(lw) === 0) add({ text: d, displayText: d, className: 'hint-id' }, 'd' + d);
     if (!list.length) return null;
-    if (list.length === 1 && list[0].text === w.word) return null;
+    if (list.length === 1 && list[0].text === w.word && !/hint-(snip|fn)/.test(list[0].className)) return null;
     return { list, from: w.from, to: w.to };
   }
 
