@@ -716,7 +716,7 @@
   def('tolower', (vm, a) => (a[0] >= 65 && a[0] <= 90 ? a[0] + 32 : a[0]));
 
   // ---------------------------------------------------------------- time / unistd
-  def('time', (vm, a) => { const t = BigInt(Math.floor(Date.now() / 1000)); const p = num(a[0]); if (p) { vm.chk(p, 8, true); vm.dv.setBigInt64(p, t, true); } return t; });
+  def('time', (vm, a) => { const t = BigInt(Math.floor((vm.startMs + (Date.now() - vm.clockStart)) / 1000)); const p = num(a[0]); if (p) { vm.chk(p, 8, true); vm.dv.setBigInt64(p, t, true); } return t; });
   def('clock', (vm) => BigInt(Math.round((Date.now() - vm.clockStart) * 1000)));
   def('difftime', (vm, a) => Number(big(a[0]) - big(a[1])));
 

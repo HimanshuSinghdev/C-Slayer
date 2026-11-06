@@ -15,6 +15,7 @@
   class Unsupported extends Error { }
   class TurboTimeout extends Error { }
   class TurboFallback extends Error { }
+  class TurboNeedInput extends Error { }
   const un = (m) => { throw new Unsupported(m); };
 
   // builtins that may wait for interactive input: programs using them run on the VM unless stdin is preloaded
@@ -593,7 +594,7 @@
       `  if (a < ${MEM.FUNC_BASE} || (a - ${MEM.FUNC_BASE}) % ${MEM.FUNC_STRIDE} !== 0 || !f) { vm.pc = pc; vm.curFn = fn; vm.fp = fp; vm.fail("segv", "Segmentation fault: calling through an invalid function pointer (" + (a === 0 ? "NULL" : "0x" + (a >>> 0).toString(16)) + ")"); }`,
       '  return f; };',
       'const BI = vm.builtins;',
-      'const CB = (bi, args, pc, fn, fp, sp) => { vm.pc = pc; vm.curFn = fn; vm.fp = fp; vm.sp = sp; let r; while ((r = BI[bi].fn(vm, args)) === R.WAIT) vm.feedInput("", true); return r === undefined ? 0 : r; };',
+      'const CB = (bi, args, pc, fn, fp, sp) => { vm.pc = pc; vm.curFn = fn; vm.fp = fp; vm.sp = sp; let r; while ((r = BI[bi].fn(vm, args)) === R.WAIT) { if (R.NEEDIN) throw new R.NeedInput(); vm.feedInput("", true); } return r === undefined ? 0 : r; };',
     ];
     for (const nm of ctx.used) {
       if (nm === 'NEGL') header.push('const NEGL = LF.NEG;'); else if (nm === 'BNOTL') header.push('const BNOTL = LF.BNOT;'); else header.push(`const ${nm} = LF.${nm};`);
@@ -602,7 +603,7 @@
     for (const e of entries) footer.push(`FT[${e.i}] = f${e.i};`);
     footer.push('return { FT, start: fstart, resetSP() { SP = ' + vm.stackTop + '; } };');
     const src = header.join('\n') + '\n' + parts.join('\n') + '\n' + footer.join('\n');
-    const R = { vm, dv: vm.dv, u8: vm.u8, P: vm.poison, K: consts, conv: H.conv, ld64: H.ld64, st64: H.st64, nI: H.nI, f2i: H.f2i, LF, WAIT: H.WAIT, TKH: hooks.tick };
+    const R = { vm, dv: vm.dv, u8: vm.u8, P: vm.poison, K: consts, conv: H.conv, ld64: H.ld64, st64: H.st64, nI: H.nI, f2i: H.f2i, LF, WAIT: H.WAIT, TKH: hooks.tick, NEEDIN: !!hooks.needInput, NeedInput: TurboNeedInput };
     let mod;
     try { mod = new Function('R', src)(R); }
     catch (e) { if (e instanceof Unsupported) throw e; throw new Unsupported('generated code rejected: ' + e.message); }
@@ -638,6 +639,7 @@
     } catch (e) {
       if (e instanceof RunError) { vm.error = e; vm.done = true; return 'error'; }
       if (e instanceof TurboTimeout) return 'timeout';
+      if (e instanceof TurboNeedInput) return 'wait';
       if (e instanceof RangeError && /call stack|Maximum/i.test(e.message)) return 'overflow';
       const w = vm.where();
       vm.error = Object.assign(new RunError('internal', 'Internal error: ' + (e && e.message ? e.message : e)), w);
@@ -645,5 +647,5 @@
     }
   }
 
-  CC.Turbo = { build, run, usesInput, Unsupported, TurboTimeout };
+  CC.Turbo = { build, run, usesInput, Unsupported, TurboTimeout, TurboNeedInput };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

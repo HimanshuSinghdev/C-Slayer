@@ -146,7 +146,7 @@
       this.decoders = [null, new TextDecoder('utf-8'), new TextDecoder('utf-8')];
       this.files = new Map(); this.nextFd = 3;
       this.vfs = opts.vfs || new Map();
-      this.rng = null; this.strtokPtr = 0; this.clockStart = Date.now();
+      this.rng = null; this.strtokPtr = 0; this.clockStart = Date.now(); this.startMs = (opts && opts.startMs) || this.clockStart;
       this.symAddr = prog.symAddr;
       this.stats = { allocs: 0, frees: 0, bytesAllocated: 0, calls: 0 };
       this.warnings = [];

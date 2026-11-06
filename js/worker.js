@@ -76,23 +76,35 @@ async function handleRun(m, debugging) {
   const s = session = { id, vm, stopped: false, spent: 0, wake: null, resume: null };
   if (debugging) vm.dbgSet('into', m.breakpoints);
   let status;
-  const skip = { 1: 0, 2: 0 };      // output already shown by a Turbo attempt that had to be redone
+  const skip = { 1: 0, 2: 0 }, shown = { 1: 0, 2: 0 };      // `shown`: text already on screen; `skip`: what a redone run must not print again
   const post = (fd, str) => {
     if (skip[fd] > 0) { const k = Math.min(skip[fd], str.length); skip[fd] -= k; str = str.slice(k); if (!str.length) return; }
+    shown[fd] += str.length;
     postMessage({ type: 'out', id, fd, s: str });
   };
-  // Turbo: translate to JS and let the browser's JIT run it. Programs that read the keyboard stay on the VM.
-  if (!debugging && !m.noTurbo && CC.Turbo && !CC.Turbo.usesInput(c.program)) {
-    let mod = null; const t0 = performance.now(), sent = { 1: 0, 2: 0 };
-    const flush = () => { for (const q of vm.drainOutput()) { sent[q.fd] = (sent[q.fd] || 0) + q.s.length; post(q.fd, q.s); } };
-    try { mod = CC.Turbo.build(vm, { tick() { flush(); if (performance.now() - t0 > lim.timeMs) throw new CC.Turbo.TurboTimeout(); } }); } catch (e) { mod = null; }
-    if (mod) {
+  s.stdinAll = ''; s.eof = false; const startMs = Date.now();
+  // Turbo: translate to JS and let the browser's JIT run it. When the program needs more keyboard input the run is
+  // paused by *replaying*: ask for the line, then run again from the top with everything typed so far, hiding the text
+  // already shown. C programs here are deterministic (time() is pinned), so the replay prints exactly the same prefix.
+  if (!debugging && !m.noTurbo && CC.Turbo) {
+    for (let attempt = 0; ; attempt++) {
+      if (attempt > 0) { vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs }); vm.feedInput(s.stdinAll, s.eof); }
+      else vm.startMs = startMs;
+      skip[1] = shown[1]; skip[2] = shown[2];
+      let mod = null; const t0 = performance.now();
+      const flush = () => { for (const q of vm.drainOutput()) post(q.fd, q.s); };
+      try { mod = CC.Turbo.build(vm, { needInput: true, tick() { flush(); if (performance.now() - t0 > lim.timeMs) throw new CC.Turbo.TurboTimeout(); } }); } catch (e) { mod = null; }
+      if (!mod) break;
       status = CC.Turbo.run(vm, mod); flush();
-      if (status === 'overflow') {   // JS stack is shallower than the C stack: redo on the VM, skipping what was already shown
-        skip[1] = sent[1]; skip[2] = sent[2];
-        vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB }); status = undefined;
-      }
+      if (status === 'overflow') { skip[1] = shown[1]; skip[2] = shown[2]; vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs }); vm.feedInput(s.stdinAll, s.eof); status = undefined; break; }
+      if (status !== 'wait') break;
+      if (s.stopped) { status = 'stopped'; break; }
+      const had = s.stdinAll.length;
+      await new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); });
+      if (s.stopped) { status = 'stopped'; break; }
+      if (s.stdinAll.length === had && !s.eof) { s.eof = true; }   // woken with nothing new: treat as end of input
     }
+    if (status === undefined && vm === s.vm) { /* fall through to the VM below */ }
   }
   while (status === undefined) {
     status = await drive(s, lim.timeMs, post,
@@ -115,7 +127,9 @@ async function handleRun(m, debugging) {
 
 function handleStdin(m) {
   if (!session || session.id !== m.id) return;
-  session.vm.feedInput(String(m.text || '').slice(0, 1 << 20), !!m.eof);
+  const txt = String(m.text || '').slice(0, 1 << 20);
+  session.vm.feedInput(txt, !!m.eof);
+  session.stdinAll = (session.stdinAll || '') + txt; if (m.eof) session.eof = true;
   if (session.wake) { const w = session.wake; session.wake = null; if (!m.eof && !String(m.text || '').length) { /* nothing */ } w(); }
 }
 
