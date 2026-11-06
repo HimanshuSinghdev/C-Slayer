@@ -245,6 +245,34 @@
 
   function isSimple(x) { return /^[A-Za-z_$][\w$]*$/.test(x) || /^\(?-?[\d.eE+-]+n?\)?$/.test(x) || x === 'NaN' || x === 'Infinity' || x === '(-Infinity)' || x === '(-0)'; }
 
+  /** Rebuild structured control flow from the jumps: forward jumps become `break` out of labelled blocks, backward jumps
+   *  become `continue` of labelled loops. Returns null when the jumps do not nest (the caller then uses a dispatch loop). */
+  function planStructure(ins, A, D, code) {
+    const blocks = new Map(), loops = new Map();
+    for (let i = 0; i < ins.length; i++) {
+      if (A.depth[i] < 0) continue;
+      const tg = A.eff[i].targets; if (!tg) continue;
+      for (const t of tg) {
+        const j = D.at.get(t); if (j === undefined) return null;
+        if (j > i) { let b = blocks.get(j); if (!b) blocks.set(j, b = { kind: 'B', s: i, e: j, lab: j }); b.s = Math.min(b.s, i); }
+        else { let l = loops.get(j); if (!l) loops.set(j, l = { kind: 'L', s: j, e: i + 1, lab: j }); l.e = Math.max(l.e, i + 1); }
+      }
+    }
+    const items = [...blocks.values(), ...loops.values()];
+    for (let iter = 0, changed = true; changed; iter++) {
+      if (iter > 60) return null;
+      changed = false;
+      for (const I of items) for (const J of items) {
+        if (I === J || !(I.s < J.s && J.s < I.e && I.e < J.e)) continue;
+        if (J.kind === 'B') { J.s = I.s; changed = true; }
+        else if (I.kind === 'L') { I.e = J.e; changed = true; }
+        else return null;
+      }
+    }
+    items.sort((a, b) => a.s - b.s || b.e - a.e || (a.kind === 'B' ? -1 : 1));
+    return { items, targets: new Set([...blocks.keys(), ...loops.keys()]) };
+  }
+
   // ---------- code generation for one function ----------
   function genFunction(ctx, fi, name, start, end, rec, info) {
     const { code, consts, vm, used } = ctx;
@@ -285,7 +313,9 @@
       const e = A.eff[i];
       if (e.targets) for (const t of e.targets) labels.add(D.at.get(t));
     }
-    const multi = labels.size > 1;
+    const plan = labels.size > 1 ? planStructure(ins, A, D, code) : null;
+    const multi = labels.size > 1 && !plan;
+    let curIdx = 0, nextItem = 0; const openStack = [];
     let tmp = 0;
     const T = () => 't' + (tmp++);
     let st = [], body = [], live = true;
@@ -303,8 +333,13 @@
     const push = (expr) => { if (isSimple(expr)) { st.push(expr); } else { const t = T(); emit(`const ${t} = ${expr};`); st.push(t); } };
     const pushT = (expr) => { const t = T(); emit(`const ${t} = ${expr};`); st.push(t); };
     let curLabel = -1, looped = false;
-    const jump = (target, back) => { if (target === curLabel) { looped = true; return `${back ? 'if (--B < 0) TK(); ' : ''}continue LB${target};`; } return `${back ? 'if (--B < 0) TK(); ' : ''}pc = ${target}; continue D;`; };
-    const closeBlock = (blockStart) => { if (looped && blockStart >= 0) { body.splice(blockStart, 0, `LB${curLabel}: for (;;) {`); body.push('break; }'); } looped = false; };
+    const jump = (target, back) => {
+      const tk = back ? 'if (--B < 0) TK(); ' : '';
+      if (plan) { const ti = D.at.get(target); return ti <= curIdx ? `${tk}continue L${ti};` : `break B${ti};`; }
+      if (target === curLabel) { looped = true; return `${tk}continue LB${target};`; }
+      return `${tk}pc = ${target}; continue D;`;
+    };
+    const closeBlock = (blockStart) => { if (!plan && looped && blockStart >= 0) { body.splice(blockStart, 0, `LB${curLabel}: for (;;) {`); body.push('break; }'); } looped = false; };
     let blockStart = -1;
     const isBack = (I, t) => t <= I.pc;
     const needD = multi;
@@ -317,9 +352,20 @@
     const lmem = (off) => `(fp + ${off})`;
     const uncond = new Set();
 
+    if (plan) enterBlock(0);
     for (let idx = 0; idx < ins.length; idx++) {
       const I = ins[idx], op = I.op, o = I.o;
       const reach = A.depth[idx] >= 0;
+      curIdx = idx;
+      if (plan) {
+        const isT = plan.targets.has(idx);
+        if (isT && live && reach) spill();
+        let moved = false;
+        while (openStack.length && openStack[openStack.length - 1].e <= idx) { const it = openStack.pop(); emit(it.kind === 'L' ? 'break; }' : '}'); moved = true; }
+        while (nextItem < plan.items.length && plan.items[nextItem].s === idx) { const it = plan.items[nextItem++]; openStack.push(it); emit(it.kind === 'L' ? `L${it.lab}: for (;;) {` : `B${it.lab}: {`); moved = true; }
+        if (isT && reach) { live = true; enterBlock(idx); }
+        else if (!reach || !live) continue;
+      } else
       if (labels.has(idx)) {
         if (live) spill();
         if (body.length || idx > 0) { /* close previous block */ }
@@ -476,6 +522,7 @@
         }
       }
     }
+    if (plan) while (openStack.length) { const it = openStack.pop(); emit(it.kind === 'L' ? 'break; }' : '}'); }
     if (live) emit('throw new Error("control reached the end of a function");');
     closeBlock(blockStart);
     // assemble: first "}" in body belongs to the (empty) block opened before case 0, so open it properly
@@ -488,7 +535,7 @@
       for (const l of b) text.push('    ' + l);
       text.push('  } default: throw new Error("bad pc"); } }');
     } else {
-      const b = body.slice(); b.splice(0, 2);
+      const b = body.slice(); if (!plan) b.splice(0, 2);
       for (const l of b) text.push('    ' + l);
     }
     // unlabelled-single-block: body begins inside no case, so strip the closing "}" the final label would add
