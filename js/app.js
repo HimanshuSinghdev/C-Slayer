@@ -225,6 +225,49 @@
   // ---------------- output ----------------
   const out = $('#out');
   function resetOutput() { out.textContent = ''; outLen = 0; $('#inForm').hidden = true; }
+  // ---- share by link: the program travels inside the link itself (after the #), nothing is uploaded anywhere ----
+  const b64 = {
+    enc(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
+    dec(t) { const s = atob(t.replace(/-/g, '+').replace(/_/g, '/')); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+  };
+  async function pipe(u8, stream, cap) {
+    const out = new Blob([u8]).stream().pipeThrough(stream), rd = out.getReader(), parts = []; let n = 0;
+    for (;;) { const { done, value } = await rd.read(); if (done) break; n += value.length; if (n > cap) { try { rd.cancel(); } catch (e) { /* */ } throw new Error('too big'); } parts.push(value); }
+    const r = new Uint8Array(n); let o = 0; for (const c of parts) { r.set(c, o); o += c.length; } return r;
+  }
+  async function packShare(name, code) {
+    const raw = new TextEncoder().encode(JSON.stringify({ v: 1, n: name, c: code }));
+    if (typeof CompressionStream === 'function') return 'z' + b64.enc(await pipe(raw, new CompressionStream('deflate-raw'), 1 << 20));
+    return 'p' + b64.enc(raw);
+  }
+  async function unpackShare(t) {
+    const body = t.slice(1); let raw = b64.dec(body);
+    if (t[0] === 'z') { if (typeof DecompressionStream !== 'function') throw new Error('unsupported'); raw = await pipe(raw, new DecompressionStream('deflate-raw'), 400000); }
+    else if (t[0] !== 'p') throw new Error('bad link');
+    const o = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
+    if (!o || o.v !== 1 || typeof o.c !== 'string' || o.c.length > 300000) throw new Error('bad link');
+    return { name: cleanName(typeof o.n === 'string' ? o.n.slice(0, 40) : '') || 'shared.c', code: o.c };
+  }
+  $('#btnShare').onclick = async () => {
+    try {
+      const url = location.origin + location.pathname + '#s=' + await packShare(files[cur].name, cm.getValue());
+      if (url.length > 60000) return toast('Program is too long to share as a link');
+      if (navigator.share) { try { await navigator.share({ title: 'C-Slayer program', url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+      await navigator.clipboard.writeText(url); toast('Link copied');
+    } catch (e) { toast('Could not make a link here'); }
+  };
+  async function openSharedFromHash() {
+    const m = /^#s=([A-Za-z0-9_-]+)$/.exec(location.hash); if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    try {
+      const sh = await unpackShare(m[1]);
+      if (!confirm('Open the shared program "' + sh.name + '"?\nIt is added as a new file; your own files are not touched.')) return;
+      if (files.length >= 50) return toast('Too many files');
+      let name = sh.name, i = 2; while (files.some(f => f.name === name)) name = sh.name.replace(/(\.\w+)?$/, '_' + (i++) + '$1');
+      files.push({ name, code: sh.code }); cur = files.length - 1; renderFiles(); cm.setValue(sh.code); save(); toast('Shared program opened');
+    } catch (e) { toast('That link could not be opened'); }
+  }
+  setTimeout(openSharedFromHash, 300);
   $('#btnClearOut').onclick = () => { const wasInput = !$('#inForm').hidden; resetOutput(); if ($('#btnStop').hidden) setState('idle'); else if (wasInput) $('#inForm').hidden = false; };
   function put(text, cls) {
     if (outLen > MAX_OUT) return;
