@@ -493,11 +493,13 @@
       if (!$('#btnStop').hidden || debugging) { setTimeout(reloadWhenIdle, 3000); return; }
       reloaded = true; try { save(); } catch (e) { /* */ } location.reload();
     };
-    navigator.serviceWorker.register('service-worker.js').then((reg) => {
-      const check = () => { try { reg.update(); } catch (e) { /* */ } };
+    navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).then((reg) => {
+      const check = () => { try { reg.update(); const w = reg.active || navigator.serviceWorker.controller; if (w) w.postMessage({ type: 'check' }); } catch (e) { /* */ } };
+      check();
       document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
       setInterval(check, 30 * 60 * 1000);
     }).catch(() => { /* offline mode unavailable */ });
+    navigator.serviceWorker.addEventListener('message', (e) => { if (e.data && e.data.type === 'updated') { toast('Updating to the newest version…'); reloadWhenIdle(); } });
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) reloadWhenIdle(); });
   }
 })();
