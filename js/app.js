@@ -232,7 +232,19 @@
   });
   const sm = $('#samples');
   window.SAMPLES.forEach((s, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = s.name; sm.appendChild(o); });
-  sm.addEventListener('change', () => { const s = window.SAMPLES[+sm.value]; sm.value = ''; if (!s) return; files.push({ name: cleanName(s.name.replace(/[^\w ]/g, '').replace(/\s+/g, '_').toLowerCase()) || 'sample.c', code: s.code }); cur = files.length - 1; renderFiles(); cm.setValue(s.code); save(); resetOutput(); });
+  { const g = document.createElement('optgroup'); g.label = 'Practice problems (graded)';
+    window.PROBLEMS.forEach((pr, i) => { const o = document.createElement('option'); o.value = 'p' + i; o.textContent = (i + 1) + '. ' + pr.title; g.appendChild(o); }); sm.appendChild(g); }
+  let activeProblem = LS.get('cs.problem', null);
+  const showProblem = (pr) => { put('\nProblem: ' + pr.title + '\n' + (window.CC.lang === 'hi' ? pr.hi : pr.en) + '\nPress Grade (✓): your program runs on ' + pr.tests.length + ' tests, ' + pr.tests.filter(t => t.hidden).length + ' of them hidden.\n', 'm'); };
+  sm.addEventListener('change', () => {
+    if (/^p\d+$/.test(sm.value)) {
+      const pr = window.PROBLEMS[+sm.value.slice(1)]; sm.value = ''; if (!pr) return;
+      if (tests.length && !confirm('This replaces your current test cases with the problem\'s tests. Continue?')) return;
+      tests = pr.tests.map(t => ({ name: t.name, input: t.input, expected: t.expected, hidden: !!t.hidden })); saveTests(); renderTests();
+      files.push({ name: 'problem_' + pr.id + '.c', code: pr.starter }); cur = files.length - 1; renderFiles(); cm.setValue(pr.starter); save(); resetOutput();
+      activeProblem = pr.id; LS.set('cs.problem', pr.id); showProblem(pr); return;
+    }
+    const s = window.SAMPLES[+sm.value]; sm.value = ''; if (!s) return; files.push({ name: cleanName(s.name.replace(/[^\w ]/g, '').replace(/\s+/g, '_').toLowerCase()) || 'sample.c', code: s.code }); cur = files.length - 1; renderFiles(); cm.setValue(s.code); save(); resetOutput(); });
 
   // ---------------- tabs ----------------
   function showTab(name) {
@@ -395,11 +407,12 @@
   $('#inLine').addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'd') { e.preventDefault(); $('#btnEof').click(); } });
 
   // ---------------- tests tab ----------------
-  function saveTests() { LS.set('cs.tests', tests); const b = $('#testCount'); b.hidden = !tests.length; b.textContent = String(tests.length); }
+  function saveTests() { { const eb = $('#endProblem'); if (eb) eb.hidden = !tests.some(t => t.hidden); } LS.set('cs.tests', tests); const b = $('#testCount'); b.hidden = !tests.length; b.textContent = String(tests.length); }
   function renderTests() {
     const box = $('#testList'); box.textContent = '';
     tests.forEach((t, i) => {
       const d = document.createElement('div'); d.className = 'tcase';
+      if (t.hidden) { d.classList.add('locked'); const r0 = document.createElement('div'); r0.className = 'row'; const lb = document.createElement('span'); lb.className = 'nm'; lb.textContent = '🔒 ' + t.name + ' — checked when you press Grade'; r0.appendChild(lb); d.appendChild(r0); box.appendChild(d); return; }
       const row = document.createElement('div'); row.className = 'row';
       const nm = document.createElement('input'); nm.className = 'nm'; nm.value = t.name; nm.maxLength = 60; nm.setAttribute('aria-label', 'Test name');
       nm.addEventListener('input', () => { t.name = nm.value; saveTests(); });
@@ -411,6 +424,7 @@
       box.appendChild(d);
     });
   }
+  $('#endProblem').onclick = () => { if (!confirm('Remove the practice problem\'s tests (including hidden ones)?')) return; tests = tests.filter(t => !t.hidden && !/^Example \d+$/.test(t.name)); activeProblem = null; LS.set('cs.problem', null); saveTests(); renderTests(); };
   $('#addTest').onclick = () => { if (tests.length >= 25) return toast('Up to 25 test cases'); tests.push({ name: 'Test ' + (tests.length + 1), input: '', expected: '' }); saveTests(); renderTests(); };
   const st = $('#stdinText'); st.value = stdinText; st.addEventListener('input', () => { stdinText = st.value; LS.set('cs.stdin', stdinText); });
 
@@ -437,6 +451,13 @@
     renderProblems(m.errors); markLines(m.errors);
     const r = m.result, box = $('#scoreBox'); box.textContent = '';
     setState(m.ok ? 'ok' : 'error');
+    const fixBox = (li, fix) => {
+      if (!fix) return; const d = document.createElement('details'); d.className = 'fixbox';
+      d.appendChild(el('summary', '', CC.scoreWord('Show fix')));
+      const pre = document.createElement('pre'); pre.appendChild(el('div', 'fb', '✖ ' + (CC.lang === 'hi' ? 'Aise nahi' : 'Instead of')));
+      const c1 = document.createElement('code'); c1.textContent = fix[0]; const c2 = document.createElement('code'); c2.textContent = fix[1];
+      pre.append(c1, el('div', 'fg', '✔ ' + (CC.lang === 'hi' ? 'Aise karo' : 'Write')), c2); d.appendChild(pre); li.appendChild(d);
+    };
     const wrap = el('div', 'score');
     const hero = el('div', 'hero');
     const ring = el('div', 'grade');
@@ -445,12 +466,12 @@
     fg.setAttribute('d', 'M70 7C104 4 126 28 123 55C120 86 92 105 58 102C26 99 7 78 10 50C13 22 44 6 84 10C99 12 108 17 112 22'); svg.appendChild(fg);
     const num = el('div', 'num', '0'); const small = el('small', '', '/10'); num.appendChild(small);
     ring.append(svg, num);
-    const info = el('div'); info.append(el('h3', '', r.grade), el('p', '', r.summary));
+    const info = el('div'); info.append(el('h3', '', CC.scoreWord(r.grade)), el('p', '', CC.scoreSummary(r.summary)));
     hero.append(ring, info); wrap.appendChild(hero);
     if (r.tips && r.tips.length) {
-      const tp = el('div', 'part tips'); tp.appendChild(el('div', 'hd', 'Quick wins — points you can win back'));
+      const tp = el('div', 'part tips'); tp.appendChild(el('div', 'hd', CC.scoreWord('Quick wins — points you can win back')));
       const ul = document.createElement('ul');
-      for (const t of r.tips) { const li = document.createElement('li'); const b = document.createElement('b'); b.textContent = '+' + t.gain + ' '; li.appendChild(b); li.appendChild(document.createTextNode((t.line ? 'Line ' + t.line + ': ' : '') + t.text)); ul.appendChild(li); }
+      for (const t of r.tips) { const li = document.createElement('li'); const b = document.createElement('b'); b.textContent = '+' + t.gain + ' '; li.appendChild(b); const tr = CC.scoreText(t.text); li.appendChild(document.createTextNode((t.line ? (CC.lang === 'hi' ? 'Line ' : 'Line ') + t.line + ': ' : '') + tr.text)); fixBox(li, tr.fix); ul.appendChild(li); }
       tp.appendChild(ul); wrap.appendChild(tp);
     }
     for (const part of r.parts) {
@@ -458,7 +479,7 @@
       d.append(hd);
       if (part.notes.length) {
         const ul = document.createElement('ul');
-        for (const n of part.notes) { const li = document.createElement('li'); if (n.line) { const b = document.createElement('b'); b.textContent = 'L' + n.line + ' '; li.appendChild(b); } li.appendChild(document.createTextNode(n.text)); ul.appendChild(li); }
+        for (const n of part.notes) { const li = document.createElement('li'); if (n.line) { const b = document.createElement('b'); b.textContent = 'L' + n.line + ' '; li.appendChild(b); } const tr = CC.scoreText(n.text); li.appendChild(document.createTextNode(tr.text)); if (n.delta < 0) fixBox(li, tr.fix); ul.appendChild(li); }
         d.appendChild(ul);
       }
       if (part.id === 'tests' && m.tests && m.tests.length) {

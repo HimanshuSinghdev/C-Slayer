@@ -64,5 +64,92 @@
     'abort': ['abort() call hua.', 'Wo line dhundo jo abort call karti hai ya jo assert fail hua.'],
     'assert': ['Ek assert() ki condition false thi.', 'Condition dikhati hai ki program ne kya maana tha; dekho wo sach kyun nahi tha.']
   };
+
+  // ---- score report: Hinglish text + tiny before/after fixes (fixes are code, so shown in both languages) ----
+  const FIX = {
+    uninit: ['int next;            // random garbage\nprintf("%d", next);', 'int next = 0;        // always give a start value\nprintf("%d", next);'],
+    slow: ['int fib(int n) {      // calls itself twice: 2^n work\n  return n<2 ? n : fib(n-1)+fib(n-2);\n}', 'long long a=0, b=1;  // one loop: n steps\nfor (int i=2; i<=n; i++) { long long t=a+b; a=b; b=t; }'],
+    leak: ['int *a = malloc(n * sizeof(int));\n/* ... use a ... */      // never freed', 'int *a = malloc(n * sizeof(int));\n/* ... use a ... */\nfree(a);               // give it back'],
+    scanfret: ['scanf("%d", &n);', 'if (scanf("%d", &n) != 1) return 1;'],
+    strcpy: ['strcpy(dst, src);', 'snprintf(dst, sizeof dst, "%s", src);'],
+    scanfs: ['scanf("%s", name);', 'scanf("%31s", name);   // width = size - 1'],
+    gets: ['gets(buf);', 'fgets(buf, sizeof buf, stdin);'],
+    atoi: ['int n = atoi(s);', 'char *end; long n = strtol(s, &end, 10);\nif (*end != 0) /* not a number */;'],
+    mallocnull: ['int *p = malloc(40);\np[0] = 1;', 'int *p = malloc(40);\nif (p == NULL) return 1;\np[0] = 1;'],
+    comments: ['int main() { ... }', '// Prints the n-th Fibonacci number.\nint main() { ... }'],
+    magic: ['if (x > 86400) ...', '#define SECONDS_PER_DAY 86400\nif (x > SECONDS_PER_DAY) ...'],
+    globals: ['int total;            // global\nvoid add(int x){ total += x; }', 'int add(int total, int x){ return total + x; }'],
+    split: ['int main() { /* 80 lines */ }', 'int readInput(void);\nint solve(int n);\nint main() { return solve(readInput()); }'],
+    nest: ['if (a) { if (b) { if (c) { ... } } }', 'if (!a || !b || !c) return;\n...'],
+    goto: ['goto done;', 'break;   // or return; or a flag'],
+    exit: ['int main() { ... return 1; }', 'int main() { ... return 0; }   // 0 = success'],
+    stack: ['int f(int n){ return f(n-1); }', 'int f(int n){ if (n == 0) return 0; return f(n-1); }']
+  };
+  // [english regex, hinglish builder, fix key]
+  const SC = [
+    [/^Ran out of time/, () => 'Program time khatam hone tak chalta raha: shayad infinite loop ya bahut slow algorithm.', 'slow'],
+    [/^Too slow: input (\S+)/, (m) => 'Bahut slow: input ' + m[1] + ' par program time pe khatam nahi hua. Algorithm bahut tezi se bada hota hai (exponential/quadratic). Loop ya memoisation use karo.', 'slow'],
+    [/^Hung on input (\S+)/, (m) => 'Input ' + m[1] + ' par program atak gaya.', 'slow'],
+    [/^Crashed on input (\S+): (.*)/, (m) => 'Input ' + m[1] + ' par crash hua: ' + m[2], null],
+    [/^Printed garbage for input (\S+)/, (m) => 'Input ' + m[1] + ' par kachra (garbage) print hua: koi variable set hone se pehle padha ja raha hai (uninitialised).', 'uninit'],
+    [/^Printed an enormous amount/, () => 'Bahut zyada output print hua (loop kabhi rukta nahi?).', null],
+    [/^Stack overflow/, () => 'Stack overflow: recursion ka base case kaam nahi kar raha, ya local array bahut bada hai.', 'stack'],
+    [/^Program aborted: (.*)/, (m) => 'Program abort ho gaya: ' + m[1], null],
+    [/^Memory\/arithmetic error at runtime: (.*)/, (m) => 'Runtime pe memory/arithmetic error: ' + m[1], null],
+    [/^main\(\) exited with status (\d+)/, (m) => 'main() ne status ' + m[1] + ' ke saath exit kiya (0 ka matlab sab theek).', 'exit'],
+    [/^Memory leak: (\d+) block\w* \((\d+) bytes\) never freed/, (m) => 'Memory leak: ' + m[1] + ' block (' + m[2] + ' bytes) kabhi free nahi hua. Score 7 se upar nahi ja sakta.', 'leak'],
+    [/^Leaked memory keeps/, () => 'Memory leak ki wajah se jawab sahi hone par bhi score 7 pe ruk jata hai.', 'leak'],
+    [/^A warning \(wrong printf\/scanf type/, () => 'Warning (printf/scanf ka galat type ya uninitialised variable) ka matlab hai ki output shayad galat hai.', 'uninit'],
+    [/^Negative input is accepted silently/, () => 'Negative input chup-chaap accept ho jata hai; usse validate karne par vichar karo.', 'scanfret'],
+    [/^Edge-case probes .* all ran cleanly/, () => 'Edge-case checks (0, 1, negative, bada number) sab theek chale.', null],
+    [/^No test cases were provided/, () => 'Koi test case nahi diya gaya, isliye sirf ek clean run se sahi hone ka andaza lagaya hai. Sahi grade ke liye test cases add karo.', null],
+    [/^No warnings/, () => 'Koi warning nahi: clean build.', null],
+    [/^Ran to completion/, () => 'Program poora chala, exit status 0.', null],
+    [/^Program was not run/, () => 'Program chalaya hi nahi gaya.', null],
+    [/^(\d+) of (\d+) test cases passed/, (m) => m[2] + ' mein se ' + m[1] + ' test case pass hue.', null],
+    [/^Failed: (.*)/, (m) => 'Fail hua: ' + m[1], null],
+    [/^strcpy\/strcat\/sprintf do not check/, () => 'strcpy/strcat/sprintf destination ka size check nahi karte; length ke saath strncpy/snprintf use karo.', 'strcpy'],
+    [/^scanf\("%s"\) without a width/, () => 'scanf("%s") bina width ke buffer overflow kar sakta hai; "%31s" jaisa width do.', 'scanfs'],
+    [/^gets\(\) is unsafe/, () => 'gets() unsafe hai aur C se hata diya gaya hai. fgets use karo.', 'gets'],
+    [/^atoi\(\) cannot report errors/, () => 'atoi() galti nahi bata sakta; strtol() bata sakta hai.', 'atoi'],
+    [/^The return value of scanf is ignored/, () => 'scanf ki return value ignore ho rahi hai: check karo ki jitna chahiye tha utna padha ya nahi.', 'scanfret'],
+    [/^malloc\/calloc result '(.*)' is never checked for NULL/, (m) => "malloc/calloc ka result '" + m[1] + "' kabhi NULL ke liye check nahi hua.", 'mallocnull'],
+    [/^No comments at all/, () => 'Koi comment nahi hai: program ka maksad aur mushkil hisse samjhao.', 'comments'],
+    [/^Very few comments/, () => 'Itne code ke hisaab se comments bahut kam hain.', 'comments'],
+    [/^Tabs and spaces are mixed/, () => 'Indentation mein tab aur space mix hain. Format button dabao.', null],
+    [/^Indentation does not follow the block structure in (\d+) lines/, (m) => m[1] + ' lines mein indentation block ke hisaab se nahi hai. Format button dabao.', null],
+    [/^Lines longer than 100 characters \((\d+)\)/, (m) => '100 se zyada characters wali ' + m[1] + ' lines hain; unhe tod do.', null],
+    [/^Non-descriptive names: (.*)/, (m) => 'Naam samajh nahi aate: ' + m[1] + ' Aise naam rakho jo batayen variable kya hai.', null],
+    [/^Mixed naming styles/, () => 'Naam rakhne ke tarike mix hain (camelCase aur snake_case). Ek hi style rakho.', null],
+    [/^Several unexplained numeric constants/, () => 'Kai numbers ka matlab nahi pata: unhe #define ya const se naam do.', 'magic'],
+    [/^Function '(.*)' is (\d+) lines long/, (m) => "Function '" + m[1] + "' " + m[2] + ' lines lamba hai; chhote functions mein baanto.', 'split'],
+    [/^Function '(.*)' nests (\d+) levels deep/, (m) => "Function '" + m[1] + "' " + m[2] + ' level gehra hai; early return ya helper functions use karo.', 'nest'],
+    [/^Everything is in main\(\)/, () => 'Sab kuch main() mein hai; kaam ko functions mein baanto.', 'split'],
+    [/^goto makes control flow/, () => 'goto se code ka flow samajhna mushkil hota hai.', 'goto'],
+    [/^Several mutable global variables \((\d+)\)/, (m) => 'Kai global variables hain (' + m[1] + '); data parameters se bhejo.', 'globals'],
+    [/^Well-sized functions/, () => 'Functions sahi size ke hain, nesting kam hai.', null],
+    [/^Consistent, readable layout/, () => 'Layout saaf aur ek jaisa hai.', null],
+    [/^No risky library calls/, () => 'Koi risky library call nahi mili.', null]
+  ];
+  const WORDS = {
+    'Outstanding': 'Shandaar', 'Excellent': 'Bahut badhiya', 'Good': 'Accha', 'Fair': 'Theek-thaak', 'Needs work': 'Mehnat chahiye', 'Not yet': 'Abhi nahi',
+    'Quick wins — points you can win back': 'Jaldi jeetne wale: ye points wapas mil sakte hain',
+    'Compiles cleanly': 'Compile', 'Safe coding practices': 'Surakshit coding', 'Fix': 'Theek karo', 'Show fix': 'Fix dekho'
+  };
+  CC.scoreText = function (text) {
+    for (const [re, fn, fx] of SC) {
+      const m = re.exec(text);
+      if (m) return { text: CC.lang === 'hi' ? fn(m) : text, fix: fx ? FIX[fx] : null };
+    }
+    return { text, fix: null };
+  };
+  CC.scoreWord = function (w) { return CC.lang === 'hi' && WORDS[w] ? WORDS[w] : w; };
+  CC.scoreSummary = function (t) {
+    if (CC.lang !== 'hi') return t;
+    if (/^Clean build, clean run/.test(t)) return 'Clean build, clean run, saaf code. Sudharne ko kuch nahi.';
+    const m = /^Biggest gains available in: (.*?)\./.exec(t);
+    return m ? 'Sabse zyada faida yahan: ' + m[1] + '.' + (/crashing program is capped at 6/.test(t) ? ' Crash hone wala program 6 pe ruk jata hai.' : '') : t;
+  };
+  CC.scoreFixes = FIX; CC.scoreRules = SC;
   CC.explainHi = { rules: rules, runtime: runtime };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

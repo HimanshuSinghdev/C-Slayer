@@ -222,3 +222,5 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 .conrow{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-bottom:8px}
 .conrow #samples{flex:1 1 0;min-width:0;min-height:40px;background:var(--panel2);color:var(--ink);border:1.5px solid var(--line);border-radius:8px;padding:0 10px;font-size:14px}
 @media(min-width:520px){.ibtn .lbl{display:inline}}
+.fixbox{margin-top:6px}.fixbox summary{cursor:pointer;color:var(--accent,#e8685d);font-size:13px;font-weight:600;min-height:28px}.fixbox pre{margin:6px 0 0;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap;overflow-x:auto;font-size:12.5px}.fixbox code{display:block;font-family:inherit}.fixbox .fb{color:#d9534f;font-weight:700;font-size:11px;margin:2px 0}.fixbox .fg{color:#3a9d5d;font-weight:700;font-size:11px;margin:8px 0 2px}
+.tcase.locked{opacity:.8}.tcase.locked .nm{display:block;padding:8px 0;font-size:14px;color:var(--dim)}
