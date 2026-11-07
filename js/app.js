@@ -165,7 +165,15 @@
     }
     return box;
   }
+  let memOn = !!LS.get('cs.mem', false), lastSnap = null;
+  function applyMem() {
+    $('#dMemBtn').setAttribute('aria-pressed', String(memOn)); $('#dMem').hidden = !memOn;
+    for (const id of ['#dVars', '#dHeap']) $(id).hidden = memOn; const hh = document.querySelector('#p-debug .dh'); document.querySelectorAll('#p-debug > h4.dh').forEach(h => { h.hidden = memOn; });
+    if (memOn && lastSnap) CC.memView.render($('#dMem'), lastSnap);
+  }
+  $('#dMemBtn').onclick = () => { memOn = !memOn; LS.set('cs.mem', memOn); applyMem(); };
   function renderSnap(snap) {
+    lastSnap = snap; if (memOn) CC.memView.render($('#dMem'), snap);
     showCurLine(snap.line);
     const st = $('#dStack'); st.textContent = '';
     snap.stack.forEach((f, i) => st.appendChild(el2('div', 'sframe' + (i === 0 ? ' top' : ''), f.fn + '()  line ' + f.line)));
@@ -508,7 +516,7 @@
   }
 
   // ---------------- boot ----------------
-  renderFiles(); renderTests(); saveTests(); renderProblems([]); drawBp();
+  applyMem(); renderFiles(); renderTests(); saveTests(); renderProblems([]); drawBp();
   put('Write some C, then press Run. Press Grade to have it marked out of 10.\n\n', 'm');
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   // Auto-update: look for a new version whenever the app is opened or comes back to the front; when one takes over, reload

@@ -14,6 +14,10 @@ Compiler diagnostics mimic `gcc -Wall`: implicit declarations, format-string mis
 * **Interactive input:** `scanf`/`fgets` ask for input live, also on the fast engine.
 * **Format code:** the **⇥ Format** button (or Alt+Shift+F) re-indents by block structure and tidies spacing; only whitespace changes, and Ctrl+Z undoes it.
 * **Explanations in Hinglish:** tap **EN / हिं** in the file bar; every compiler error and runtime crash is explained in simple Hinglish, with how to fix it.
+* **Practice problems:** ten graded problems (menu → Practice problems) with visible examples and hidden tests; the Score tab marks them like a teacher would.
+* **Memory picture:** in the debugger, **◫ Picture** draws variables, malloc'd blocks and pointers as boxes and arrows (freed blocks and wild pointers in red).
+* **Class results:** students tap **Send result to teacher** in the Score tab; the teacher opens the links (or pastes many) on the **Class results** page (⋯ menu) and gets a sorted table, per-student code and a CSV download. Nothing is uploaded anywhere.
+* **Always up to date:** the installed app checks the repository for changes whenever it is opened and reloads itself; no clearing of data needed.
 * **Share link:** copy a link that opens your program on any phone. Themes, text size, autocomplete, installable PWA that works offline.
 
 ## Hinglish guide (students ke liye)
@@ -57,4 +61,4 @@ The local time zone is UTC.
 Upload the folder to a GitHub repo → Settings → Pages → branch `main`, root. Open the URL on your phone and "Add to Home screen".
 
 ## Develop
-`node tests/diff.js` compares output with real `gcc` on `tests/corpus/*.c`; `node tests/rt.js` checks runtime-error detection; `node tests/fuzz.js` runs the fuzzers; `node tests/scoring.js` checks the score bands; `node tests/format.js` proves the formatter keeps behaviour and is idempotent.
+`node tests/diff.js` compares output with real `gcc` on `tests/corpus/*.c`; `node tests/rt.js` checks runtime-error detection; `node tests/fuzz.js` runs the fuzzers; `node tests/scoring.js` checks the score bands; `node tests/hindi.js` checks every score note has a Hinglish line; `node tests/problems.js` grades the practice problems with gcc-made expected outputs; `node tests/format.js` proves the formatter keeps behaviour and is idempotent.
