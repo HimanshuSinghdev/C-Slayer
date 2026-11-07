@@ -440,12 +440,29 @@
       return false;
     }
     function closedSum(s) {
-      const fn = C.fn; if (!fn || C.debug || C.sys || C.noOpt || !s.init || s.init.k !== 'Decl' || s.init.items.length !== 1 || !s.c || !s.step) return null;
-      const it = s.init.items[0], iv = it.decl && it.decl.name; if (!iv || !it.init || it.decl.ptrs.length || it.decl.suffix.length || it.decl.inner) return null;
-      if (s.init.spec.quals.volatile || s.init.spec.storage) return null;
-      let ity; try { ity = C.applyDeclarator(C.baseType(s.init.spec), it.decl).type; } catch (x) { return null; }
-      if (ity.k !== 'int' || !ity.signed || ity.size < 4) return null;
-      const items = (s.body.k === 'Block' ? s.body.items : [s.body]).filter(x => !(x.k === 'Empty' || (x.k === 'ExprStmt' && !x.e)));
+      const fn = C.fn; if (!fn || C.debug || C.sys || C.noOpt || !s.c) return null;
+      const blank = (x) => x.k === 'Empty' || (x.k === 'ExprStmt' && !x.e);
+      const body = (s.body.k === 'Block' ? s.body.items : [s.body]).filter(x => !blank(x));
+      const stepOf = (e) => { e = stripParen(e); if ((e.k === 'Post' || (e.k === 'Un' && e.op === '++')) && e.op === '++' && stripParen(e.e).k === 'Id') return stripParen(e.e).name;
+        if (e.k === 'Assign' && e.op === '+=' && stripParen(e.l).k === 'Id' && C.constInt(e.r) === 1n) return stripParen(e.l).name; return null; };
+      let iv, lo, ity, items, stepNode, ext = false, initStmt = null;
+      if (s.k === 'For') {
+        if (!s.step) return null;
+        stepNode = s.step; items = body; iv = stepOf(stepNode); if (!iv) return null;
+        if (s.init && s.init.k === 'Decl') {
+          if (s.init.items.length !== 1) return null;
+          const it = s.init.items[0]; if (!it.decl || it.decl.name !== iv || !it.init || it.decl.ptrs.length || it.decl.suffix.length || it.decl.inner) return null;
+          if (s.init.spec.quals.volatile || s.init.spec.storage) return null;
+          try { ity = C.applyDeclarator(C.baseType(s.init.spec), it.decl).type; } catch (x) { return null; }
+          lo = it.init;
+        } else { ext = true; if (s.init) { const a0 = s.init.k === 'ExprStmt' ? stripParen(s.init.e) : null; if (!a0 || a0.k !== 'Assign' || a0.op !== '=' || stripParen(a0.l).k !== 'Id' || stripParen(a0.l).name !== iv) return null; initStmt = s.init; } }
+      } else if (s.k === 'While') {
+        ext = true; if (body.length < 2) return null;
+        const last = body[body.length - 1]; if (last.k !== 'ExprStmt') return null;
+        iv = stepOf(last.e); if (!iv) return null; stepNode = last.e; items = body.slice(0, -1);
+      } else return null;
+      if (ext) { const sv = C.lookup(iv); if (!sv || sv.kind !== 'var' || sv.storage !== 'local' || !sv.type) return null; ity = sv.type; lo = { k: 'Id', name: iv, line: s.line, col: 0 }; }
+      if (!iv || !ity || ity.k !== 'int' || !ity.signed || ity.size < 4) return null;
       if (items.length !== 1 || items[0].k !== 'ExprStmt') return null;
       const a = stripParen(items[0].e); let tgt, mode, cexp = null;
       if (a.k === 'Assign' && a.op === '+=') { tgt = stripParen(a.l); const r = stripParen(a.r); if (r.k === 'Id' && r.name === iv) mode = 0; else { mode = 1; cexp = a.r; } }
@@ -455,14 +472,14 @@
       const sy = C.lookup(tgt.name); if (!sy || sy.kind !== 'var' || sy.storage !== 'local' || !sy.type || sy.type.k !== 'int' || sy.type.size < 1) return null;
       const c = stripParen(s.c); if (c.k !== 'Bin' || (c.op !== '<' && c.op !== '<=')) return null;
       const cl = stripParen(c.l); if (cl.k !== 'Id' || cl.name !== iv) return null;
-      const st = stripParen(s.step); const isInc = ((st.k === 'Post' || st.k === 'Un') && st.op === '++' && stripParen(st.e).k === 'Id' && stripParen(st.e).name === iv) ||
-        (st.k === 'Assign' && st.op === '+=' && stripParen(st.l).k === 'Id' && stripParen(st.l).name === iv && C.constInt(st.r) === 1n);
-      if (!isInc) return null;
+      if (ext && !initStmt && s.k === 'For' && false) return null;
+
       const locals = new Set(fn.localNames); for (const p of fn.params) if (p.name) locals.add(p.name);
-      locals.delete(tgt.name); locals.delete(iv);
-      const lo = it.init, hi = c.r;
+      locals.delete(tgt.name); locals.delete(iv); if (ext) locals.add(iv);
+      const hi = c.r;
       if (!pureExpr(lo, locals) || !pureExpr(hi, locals) || (cexp && !pureExpr(cexp, locals))) return null;
-      for (const n of [lo, hi, cexp]) if (n && (mentions(n, tgt.name) || mentions(n, iv))) return null;
+      for (const n of [ext ? null : lo, hi, cexp]) if (n && (mentions(n, tgt.name) || mentions(n, iv))) return null;
+      if (ext && mentions(hi, iv)) return null;
       const ln = s.line;
       const num = (v, ll) => ({ k: 'Num', kind: 'int', value: BigInt(v), base: 10, u: false, l: ll ? 2 : 0, line: ln, col: 0 });
       const bin = (op, l, r) => ({ k: 'Bin', op, l, r, line: ln, col: 0 });
@@ -477,7 +494,13 @@
         sum = { k: 'Cond', c: bin('==', par(bin('&', n(), num(1))), num(0)), a: bin('*', par(bin('/', n(), num(2))), t()), b: bin('*', n(), par(bin('/', t(), num(2)))), line: ln, col: 0 };
       } else sum = bin('*', n(), par(bin('*', num(1, true), par(cexp))));
       const rhs = bin('+', { k: 'Id', name: tgt.name, line: ln, col: 0 }, par(sum));
-      return { k: 'ExprStmt', e: { k: 'Assign', op: '=', l: { k: 'Id', name: tgt.name, line: ln, col: 0 }, r: rhs, line: ln, col: 0 }, line: ln };
+      const sumStmt = { k: 'ExprStmt', e: { k: 'Assign', op: '=', l: { k: 'Id', name: tgt.name, line: ln, col: 0 }, r: rhs, line: ln, col: 0 }, line: ln };
+      if (!ext) return sumStmt;
+      // the counter lives on after the loop: it ends at the bound (or is untouched when the loop never ran)
+      const ivId = () => ({ k: 'Id', name: iv, line: ln, col: 0 });
+      const finalIv = c.op === '<' ? bin('*', num(1, true), par(hi)) : bin('+', bin('*', num(1, true), par(hi)), num(1));
+      const ivStmt = { k: 'ExprStmt', e: { k: 'Assign', op: '=', l: ivId(), r: { k: 'Cond', c: bin('>', nRaw(), num(0)), a: finalIv, b: ivId(), line: ln, col: 0 }, line: ln, col: 0 }, line: ln };
+      return { k: 'Block', items: initStmt ? [initStmt, sumStmt, ivStmt] : [sumStmt, ivStmt], line: ln };
     }
 
     C.genStmt = function (s) {
@@ -532,6 +555,7 @@
           return;
         }
         case 'While': {
+          { const cf = closedSum(s); if (cf) { C.genStmt(cf); return; } }
           if (s.c.k === 'Assign' && s.c.op === '=') C.warn(s.c, 'suggest parentheses around assignment used as truth value [-Wparentheses]');
           const lp = C.newLoop(false); const Ltop = lp.contL;
           C.place(Ltop);
