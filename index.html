@@ -31,14 +31,17 @@
 
 <nav class="files" aria-label="Files">
   <select id="fileSel" aria-label="Current file"></select>
-  <button id="fNew" class="chip" title="New file">＋</button>
-  <button id="fRen" class="chip" title="Rename">✎</button>
-  <button id="btnFormat" class="chip" title="Format code: tidy indentation and spacing (Alt+Shift+F)" aria-label="Format code"><span aria-hidden="true">⇥</span><span class="lbl"> Format</span></button>
-  <button id="btnLang" class="chip" title="Explanations in English or Hinglish" aria-label="Explanation language">EN</button>
-  <button id="fDel" class="chip" title="Delete this file" aria-label="Delete this file">🗑</button>
-  <button id="btnClear" class="chip" title="Clear all code in this file" aria-label="Clear all code in this file"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l5 5-9 9H7l-4-4zM9 17l-3 3h12"/></svg></button>
-  <button id="fDl" class="chip" title="Download .c">⤓</button>
-  <button id="fUp" class="chip" title="Open a .c file">⤒</button>
+  <button id="fNew" class="ibtn" title="New file" aria-label="New file"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="btnFormat" class="ibtn" title="Format code: tidy indentation and spacing (Alt+Shift+F)" aria-label="Format code"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h14"/></svg><span class="lbl">Format</span></button>
+  <button id="btnMore" class="ibtn" title="More file actions" aria-label="More file actions" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="19" r="1.3"/></svg></button>
+  <div id="moreMenu" class="menu" role="menu" hidden>
+    <button id="fRen" role="menuitem"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg><span>Rename file</span></button>
+    <button id="fDl" role="menuitem"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg><span>Download .c</span></button>
+    <button id="fUp" role="menuitem"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V9M7 13l5-5 5 5M5 4h14"/></svg><span>Open a .c file</span></button>
+    <button id="btnLang" role="menuitem"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h9M8.5 3v2M6 5c1 4 3 6 6 8M12 5c-1 4-3 6-7 8M14 20l4-9 4 9M15.5 17h5"/></svg><span id="langLbl">Explanations: English</span></button>
+    <button id="btnClear" role="menuitem" class="warn"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l5 5-9 9H7l-4-4zM9 17l-3 3h12"/></svg><span>Clear all code</span></button>
+    <button id="fDel" role="menuitem" class="warn"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>Delete this file</span></button>
+  </div>
   <input id="fileIn" type="file" accept=".c,.h,.txt,text/plain" hidden>
 </nav>
 
@@ -53,7 +56,11 @@
       <button role="tab" data-tab="score">Score</button>
     </div>
     <div id="p-console" class="tabpane on">
-      <div class="conrow"><label class="starter">Examples <select id="samples" aria-label="Load a sample"><option value="">Choose…</option></select></label><button type="button" class="chip" id="btnClearOut" title="Clear the output below">Clear output</button><button type="button" class="chip" id="btnShare" title="Copy a link that opens this program on any phone">Share link</button></div>
+      <div class="conrow">
+        <select id="samples" aria-label="Load an example program"><option value="">Load an example…</option></select>
+        <button type="button" class="ibtn" id="btnClearOut" title="Clear the output below" aria-label="Clear output"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg><span class="lbl">Clear</span></button>
+        <button type="button" class="ibtn" id="btnShare" title="Copy a link that opens this program on any phone" aria-label="Share link"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/></svg><span class="lbl">Share</span></button>
+      </div>
       <pre id="out" class="out" aria-live="polite"></pre>
       <form id="inForm" class="inline-in" hidden autocomplete="off">
         <span class="prompt">›</span><input id="inLine" type="text" inputmode="text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Program input">

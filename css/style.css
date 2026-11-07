@@ -205,5 +205,20 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 #fileSel{min-width:0;flex:1 1 auto}
 @media(max-width:360px){.files{gap:4px;padding-left:8px;padding-right:8px}.files .chip{min-width:30px;padding:7px 5px}#fileSel{min-width:78px}}
 #fileSel{min-height:38px}
-@media(max-width:440px){#btnFormat .lbl{display:none}}
-@media(max-width:380px){.files{gap:3px;padding-left:6px;padding-right:6px}.files .chip{min-width:28px;padding:7px 4px}#fileSel{min-width:44px;padding:7px 4px}}
+
+/* ---- toolbar redesign: uniform 40px icon buttons, overflow menu, no overlaps ---- */
+.files{position:relative;overflow:visible;gap:8px;padding:6px 12px}
+#fileSel{flex:1 1 0;min-width:0;min-height:40px}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 auto;min-width:40px;height:40px;padding:0 10px;background:var(--panel2);color:var(--ink);border:1.5px solid var(--line);border-radius:8px;font:600 13px/1 inherit;cursor:pointer}
+.ibtn:active{background:var(--line)}
+.ibtn svg{display:block;flex:none}
+.ibtn .lbl{display:none}
+.menu{position:absolute;right:12px;top:calc(100% - 2px);z-index:30;min-width:220px;max-width:calc(100vw - 24px);padding:6px;background:var(--panel);border:1.5px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:2px}
+.menu[hidden]{display:none}
+.menu button{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:0 12px;background:none;border:0;border-radius:6px;color:var(--ink);font:500 15px/1.2 inherit;text-align:left;cursor:pointer}
+.menu button:active,.menu button:focus-visible{background:var(--panel2)}
+.menu button.warn{color:#d9534f}
+.menu button.warn:first-of-type{margin-top:0}
+.conrow{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-bottom:8px}
+.conrow #samples{flex:1 1 0;min-width:0;min-height:40px;background:var(--panel2);color:var(--ink);border:1.5px solid var(--line);border-radius:8px;padding:0 10px;font-size:14px}
+@media(min-width:520px){.ibtn .lbl{display:inline}}

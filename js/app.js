@@ -48,8 +48,17 @@
     cm.operation(() => cm.replaceRange('', { line: 0, ch: 0 }, { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length }));
     cm.focus(); save(); toast('Cleared');
   };
+  // overflow menu for the less-used file actions
+  (function () {
+    const btn = $('#btnMore'), menu = $('#moreMenu');
+    const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+    btn.onclick = (e) => { e.stopPropagation(); const open = menu.hidden; menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); if (open) { const f = menu.querySelector('button'); if (f) f.focus(); } };
+    menu.addEventListener('click', () => setTimeout(close, 0));
+    document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
+  })();
   // explanation language (English / Hinglish)
-  function applyLang(l) { window.CC.lang = l; $('#btnLang').textContent = l === 'hi' ? 'हिं' : 'EN'; $('#btnLang').setAttribute('aria-pressed', l === 'hi' ? 'true' : 'false'); }
+  function applyLang(l) { window.CC.lang = l; $('#langLbl').textContent = l === 'hi' ? 'Samjhana: Hinglish (tap for English)' : 'Explanations: English (tap for Hinglish)'; $('#btnLang').setAttribute('aria-pressed', l === 'hi' ? 'true' : 'false'); }
   applyLang(LS.get('cs.lang', 'en') === 'hi' ? 'hi' : 'en');
   $('#btnLang').onclick = () => { const l = window.CC.lang === 'hi' ? 'en' : 'hi'; LS.set('cs.lang', l); applyLang(l); if (lastErrors) renderProblems(lastErrors); toast(l === 'hi' ? 'Ab errors Hinglish mein samjhaye jayenge' : 'Explanations in English'); };
   // format code: replace the text in one undoable step, keep the cursor on the same line
@@ -323,7 +332,7 @@
     if (worker) return worker;
     worker = new Worker('js/worker.js');
     worker.onmessage = (ev) => onMsg(ev.data || {});
-    worker.onerror = () => { setState('error'); put('\nThe engine crashed and was restarted.\n', 'e'); finish(); try { worker.terminate(); } catch (e) { /* */ } worker = null; };
+    worker.onerror = (ev) => { setState('error'); put('\nThe engine could not start' + (ev && ev.message ? ' (' + ev.message + ')' : '') + '. Tap Run again; if it keeps happening, check your connection once so the app can finish updating.\n', 'e'); finish(); try { worker.terminate(); } catch (e) { /* */ } worker = null; };
     return worker;
   }
   function finish() { if (debugging && !paused && false) return; $('#btnRun').hidden = false; $('#btnStop').hidden = true; $('#inForm').hidden = true; $('#btnScore').disabled = false; }
