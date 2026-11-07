@@ -70,8 +70,20 @@
     return best;
   }
 
+  // Hidden edge-case probes: programs that read input are re-run on boundary values.
+  // Only things detectable without a reference answer are judged: garbage (uninitialised) output, crashes, and
+  // running out of time on a moderately large input (exponential / quadratic algorithms).
+  const GARBAGE = /-858993460|3435973836|-3689348814741910324|14757395258967641292|-52\b/;
+  CC.scoreProbes = {
+    inputs: [{ id: 'zero', in: '0\n' }, { id: 'one', in: '1\n' }, { id: 'neg', in: '-1\n' }, { id: 'big', in: '45\n', big: true }],
+    wantsProbes: function (src) { return /\b(scanf|fscanf|getchar|fgets|gets|getc|scanf_s)\s*\(/.test(src || ''); },
+    GARBAGE: GARBAGE
+  };
+
   CC.score = function (input) {
-    const cr = input.compile, rr = input.run || null, tests = input.tests || null;
+    const cr = input.compile, rr = input.run || null, tests = input.tests || null, probes = input.probes || null;
+    let ceiling = 10; const capNotes = [];
+    const cap = (v, text) => { ceiling = Math.min(ceiling, v); capNotes.push({ text, line: 0, delta: 0 }); };
     const src = cr.source || '';
     const parts = [];
 
@@ -111,6 +123,7 @@
       const bytes = rr.leaks.reduce((a, l) => a + (l.size || 0), 0);
       dock(rt, Math.min(1.2, 0.8 + 0.2 * rr.leaks.length), 'Memory leak: ' + rr.leaks.length + ' block' + (rr.leaks.length === 1 ? '' : 's') + ' (' + bytes + ' bytes) never freed.', rr.leaks[0].line || 0);
     }
+    if (rr && !rr.runError && rr.leaks && rr.leaks.length) cap(7, 'Leaked memory keeps a program out of the top bands even when its answers are right.');
     parts.push(rt);
 
     // ---------------- correctness against tests (2.5) ----------------
@@ -124,6 +137,20 @@
       // without a reference we can only reward a clean run
       tp.got = rr && !rr.runError && (rr.exit === 0 || rr.exit == null) ? 2.0 : rr && rr.noInput && rr.hadStderr && !rr.runError ? 1.5 : rr ? 0.5 : 1.5;
       if (warns.some(w => /format '%.*expects/.test(w.msg) || /used uninitialized/.test(w.msg))) { tp.got = Math.max(0, tp.got - 1.0); tp.notes.push({ text: 'A warning (wrong printf/scanf type or uninitialized variable) means the output is probably wrong.', line: 0, delta: -1.0 }); }
+      const pr = probes && rr && !rr.runError ? probes : null;
+      if (pr) {
+        const bad = [];
+        for (const q of pr) {
+          if (q.runError && /time|step/.test(q.runError.kind || 'timeout')) { if (q.big) cap(4, 'Too slow: input ' + q.in.trim() + ' did not finish in time — the algorithm grows too fast (exponential or quadratic). Use a loop or memoisation.'); else cap(4, 'Hung on input ' + q.in.trim() + '.'); bad.push(q.id); }
+          else if (q.runError) { cap(5, 'Crashed on input ' + q.in.trim() + ': ' + (q.runError.message || q.runError.kind)); bad.push(q.id); }
+          else if (!q.big && GARBAGE.test(q.out || '')) { cap(5, 'Printed garbage for input ' + q.in.trim() + ' — a variable is read before it is set (uninitialised).'); bad.push(q.id); }
+        }
+        const neg = pr.find(q => q.id === 'neg');
+        if (neg && !neg.runError && neg.exit === 0 && (neg.out || '').trim() && !bad.length) tp.notes.push({ text: 'Negative input is accepted silently; consider validating it.', line: 0, delta: 0 });
+        if (!bad.length) { tp.got = Math.max(tp.got, 2.5); tp.notes.push({ text: 'Edge-case probes (0, 1, negative, large) all ran cleanly.', line: 0, delta: 0 }); }
+        else tp.got = Math.min(tp.got, 0.5);
+        for (const n of capNotes) tp.notes.push(n);
+      }
       good(tp, 'No test cases were provided, so correctness is estimated from a clean run only. Add test cases for a precise grade.');
     }
     parts.push(tp);
@@ -166,7 +193,7 @@
     const codeLines = sl.filter(l => l.trim()).length;
     // comments
     const nComments = (cr.comments || []).length;
-    if (codeLines >= 12 && nComments === 0) dock(st, 0.3, 'No comments at all — explain the purpose of the program and tricky parts.');
+    if (codeLines >= 25 && nComments === 0) dock(st, 0.3, 'No comments at all — explain the purpose of the program and tricky parts.');
     else if (codeLines >= 40 && nComments < Math.floor(codeLines / 40)) dock(st, 0.15, 'Very few comments for the amount of code.');
     // indentation: tab/space mix and inconsistent step
     let tabs = 0, spaces = 0; const steps = new Map();
@@ -247,6 +274,7 @@
     for (const p of parts) p.got = round1(p.got);
     // a program that crashes cannot score as "excellent"
     if (rr && rr.runError) total = Math.min(total, 6);
+    total = Math.min(total, ceiling);
     let score = Math.round(total * 2) / 2;
     score = clamp(score, 1, 10);
     // "quick wins": the biggest deductions, with the points you would get back by fixing each

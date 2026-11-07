@@ -165,6 +165,8 @@ async function runOnce(program, stdin, limitMs, heapMB) {
   };
 }
 
+function list0(m) { return Array.isArray(m.tests) && m.tests.length > 0; }
+
 async function handleScore(m) {
   const id = m.id;
   if (session) { session.stopped = true; session = null; }
@@ -185,7 +187,15 @@ async function handleScore(m) {
       tests.push({ name, pass, reason, got: r.out.slice(0, 400), expected: exp.slice(0, 400) });
     }
   }
-  const result = CC.score({ compile: c, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput } : null, tests: tests.length ? tests : null });
+  let probes = null;
+  if (c.ok && run && !list0(m) && CC.scoreProbes.wantsProbes(c.source || m.src)) {
+    probes = [];
+    for (const q of CC.scoreProbes.inputs) {
+      const r = await runOnce(c.program, q.in, q.big ? 2000 : 1000, lim.heapMB);
+      probes.push({ id: q.id, in: q.in, big: !!q.big, out: r.out.slice(0, 400), exit: r.exit, runError: r.runError });
+    }
+  }
+  const result = CC.score({ compile: c, probes, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput } : null, tests: tests.length ? tests : null });
   postMessage({ type: 'score-result', id, ok: c.ok, errors: plainErrors(c.errors), result, tests, run: run ? { out: run.out.slice(0, 4000), exit: run.exit, error: run.runError } : null });
 }
 
