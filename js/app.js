@@ -26,7 +26,7 @@
     extraKeys: {
       'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(), 'Ctrl-Space': (c) => window.CSlayerComplete.ctrlSpace(c),
       Tab: (c) => { if (c.somethingSelected()) c.indentSelection('add'); else c.replaceSelection('    ', 'end'); },
-      'Shift-Tab': (c) => c.indentSelection('subtract')
+      'Shift-Tab': (c) => c.indentSelection('subtract'), 'Shift-Alt-F': () => formatNow()
     },
     inputStyle: 'contenteditable', autocorrect: false, autocapitalize: false, spellcheck: false
   });
@@ -48,6 +48,20 @@
     cm.operation(() => cm.replaceRange('', { line: 0, ch: 0 }, { line: cm.lastLine(), ch: cm.getLine(cm.lastLine()).length }));
     cm.focus(); save(); toast('Cleared');
   };
+  // explanation language (English / Hinglish)
+  function applyLang(l) { window.CC.lang = l; $('#btnLang').textContent = l === 'hi' ? 'हिं' : 'EN'; $('#btnLang').setAttribute('aria-pressed', l === 'hi' ? 'true' : 'false'); }
+  applyLang(LS.get('cs.lang', 'en') === 'hi' ? 'hi' : 'en');
+  $('#btnLang').onclick = () => { const l = window.CC.lang === 'hi' ? 'en' : 'hi'; LS.set('cs.lang', l); applyLang(l); if (lastErrors) renderProblems(lastErrors); toast(l === 'hi' ? 'Ab errors Hinglish mein samjhaye jayenge' : 'Explanations in English'); };
+  // format code: replace the text in one undoable step, keep the cursor on the same line
+  function formatNow() {
+    const before = cm.getValue(); if (!before.trim()) return;
+    const after = window.CC.formatC(before);
+    if (after === before) return toast('Already tidy');
+    const cur = cm.getCursor(), sc = cm.getScrollInfo();
+    cm.operation(() => { cm.replaceRange(after, { line: 0, ch: 0 }, { line: cm.lineCount(), ch: 0 }); cm.setCursor({ line: Math.min(cur.line, cm.lineCount() - 1), ch: 0 }); });
+    cm.scrollTo(sc.left, sc.top); cm.focus(); toast('Code formatted (Ctrl+Z to undo)');
+  }
+  $('#btnFormat').onclick = formatNow;
   $('#btnTheme').onclick = () => { const t = isDark() ? 'paper' : 'slate'; LS.set('cs.theme', t); applyTheme(t); };
   const SIZES = [13, 14, 16, 18];
   let fsIdx = Math.max(0, SIZES.indexOf(LS.get('cs.fs', 14)));
@@ -280,7 +294,9 @@
   function setState(s) { document.body.dataset.state = s; }
 
   // ---------------- problems ----------------
+  let lastErrors = null;
   function renderProblems(errors) {
+    lastErrors = errors;
     const ul = $('#probList'); ul.textContent = '';
     const ne = errors.filter(e => e.sev === 'error').length, nw = errors.filter(e => e.sev === 'warning').length;
     const badge = $('#probCount'); badge.hidden = !(ne + nw); badge.textContent = String(ne || nw); badge.classList.toggle('w', !ne);

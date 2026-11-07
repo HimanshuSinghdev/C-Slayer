@@ -1,0 +1,68 @@
+/* C-Slayer · Hinglish (Roman Hindi) explanations. Same order as RULES in explain.js; '$1' etc. are filled from the message. */
+(function (g) {
+  'use strict';
+  const CC = g.CC = g.CC || {};
+  const rules = [
+    ["C mein har statement ke end mein semicolon (;) lagta hai. Compiler ko tab pata chala jab wo '$1' tak pahunch gaya.", 'Upar wali line ke end mein ; laga do (aksar pichli line mein hi bhool hoti hai, jis line pe error dikh rahi hai uspe nahi).'],
+    ['Ek { khola gaya tha par kabhi band (}) nahi hua, isliye file bich mein hi khatam ho gayi.', 'Apne { aur } gino: har { ka ek } hona chahiye. Aakhri function check karo; auto-indent se gap dikh jata hai.'],
+    ['Ek ( khola tha par uska ) nahi hai (ya beech mein koi extra cheez aa gayi).', 'Is line aur upar wali line ke brackets check karo.'],
+    ["Compiler ko yahan value chahiye thi (jaise 5, x ya a+b) par '$1' mil gaya.", 'Dekho koi operand missing to nahi, koi operator double (jaise ++ +) to nahi, ya extra comma / semicolon to nahi.'],
+    ["Aapne '$1' naam use kiya par is function mein kabhi declare nahi kiya.", "Use karne se pehle declare karo (jaise int $1;), spelling ya capital/small letter ki galti dekho, ya sahi #include lagao."],
+    ["Aapne '$1' ko call kiya par compiler ko pata hi nahi ye kya hai. Aksar #include bhool gaye hote ho.", 'Sahi header lagao (message batata hai kaunsa, jaise #include <stdio.h>).'],
+    ['Har C program main naam ke function se start hota hai, aur yahan main hai hi nahi.', 'Ye likho: int main(void) { ... return 0; }'],
+    ["'$1' ko call kiya gaya par uski body kabhi likhi nahi (ya naam ki spelling galat hai).", 'Function define karo, ya declaration se spelling match karke dekho.'],
+    ["Aapne '$1' ko zaroorat se kam values ke saath call kiya.", 'Function definition ke parameters ki ginti aur order se match karo.'],
+    ["Aapne '$1' ko zaroorat se zyada values ke saath call kiya.", 'Extra values hata do, ya function mein parameters badha do.'],
+    ["'$1' do baar alag-alag type ke saath declare hua hai (return type ya parameters alag).", 'Declaration aur definition bilkul ek jaise rakho.'],
+    ["'$1' ek se zyada baar define ho gaya hai.", 'Duplicate hata do ya uska naam badal do.'],
+    ['Array ka naam ek fixed jagah hota hai; poora array = se assign nahi kar sakte.', 'Ek-ek element copy karo, string ke liye strcpy, ya baaki arrays ke liye memcpy use karo.'],
+    ['= ke left side pe aisi cheez honi chahiye jisme value store ho sake (variable), 5 ya x+1 jaisi value nahi.', '= aur == ka farak dekho, aur left side pe koi extra operator to nahi.'],
+    ["'$1' const declare hua tha, isliye badal nahi sakta.", 'const hata do, ya koi dusra variable use karo.'],
+    ['Jo function value return karne ka vaada karta hai wo bina return kiye khatam ho sakta hai.', 'Har rasta (if/else ke baad bhi) return statement pe khatam hona chahiye.'],
+    ["Variable '$1' ko value mile bina hi padh liya gaya, isliye usme kachra (garbage) hai.", 'Declare karte time value do (int $1 = 0;) ya use karne se pehle assign karo.'],
+    ["'$1' declare hua par kabhi use nahi hua.", 'Hata do ya use karo. Unused variable aksar kahin aur typo ka sanket hota hai.'],
+    ["Aap '$1' mein value store karte ho par kabhi padhte nahi.", 'Value ko print/return/compare karo, ya variable hata do.'],
+    ["printf/scanf ka format %$1 ko '$2' chahiye par aapne '$4' diya. Mismatch se garbage print hota hai ya crash.", 'int ke liye %d, long ke liye %ld, float/double ke liye %f (scanf mein double ke liye %lf), char ke liye %c, string ke liye %s.'],
+    ['Format string mein % zyada hain, values kam di gayi hain.', 'Har % ke liye ek value do.'],
+    ['Aapne format string se zyada values de di.', 'Missing % lagao ya extra values hata do.'],
+    ['if (x = 5) x mein 5 daal deta hai (hamesha true). Shayad aap compare karna chahte the.', 'Compare ke liye == use karo: if (x == 5).'],
+    ['Jahan address (pointer) chahiye tha wahan simple number de diya.', 'Address ke liye & lagao, ya pointer variable do; string ke liye "..." ya char array use karo.'],
+    ['Jahan number chahiye tha wahan address de diya (jaise "a" string hai, par \'a\' ek akshar).', "Ek akshar ke liye single quotes ('a'), string ke liye double quotes (\"abc\") use karo."],
+    ['Pointer ke types match nahi karte (jaise char* chahiye tha aur int* de diya).', 'Sahi type ka pointer do ya declaration theek karo.'],
+    ['Aap array ke end ke aage index kar rahe ho. Valid index 0 se size-1 tak hote hain.', 'Loop condition dekho (< size, <= size nahi) aur array ka size check karo.'],
+    ['Local variable function khatam hote hi gayab ho jata hai, isliye uska address invalid ho jata hai.', 'Value return karo, ya malloc / static variable / caller ka buffer use karo.'],
+    ['else hamesha if (aur uske block) ke turant baad aana chahiye.', 'if ki condition ke baad extra ; ya missing/extra brace dekho.'],
+    ['break sirf loop ya switch ke andar chalta hai.', 'Function se nikalne ke liye return use karo, ya break ko loop ke andar rakho.'],
+    ['continue sirf loop ke andar chalta hai.', 'Ise for/while/do loop ke andar rakho.'],
+    ['String " se shuru hui par usi line mein band nahi hui.', 'Closing " laga do (string ke andar nayi line ke liye \\n use karo, asli line break nahi).'],
+    ["'$1' ka type define nahi hai (struct ya typedef missing).", 'Use karne se pehle struct define karo, ya type ka naam theek karo.'],
+    ["Aapne .$1 aisi cheez pe use kiya jo struct nahi hai.", 'Struct ke pointer ke liye -> aur struct variable ke liye . use karo; variable ka type check karo.'],
+    ['-> sirf struct ke pointer ke liye hota hai.', 'Jab aapke paas pointer nahi balki khud struct ho to . use karo.'],
+    ['Aap aise function ka result use kar rahe ho jo kuch return hi nahi karta (void).', 'Use assign ya print mat karo; ya function ko value return karne wala bana do.'],
+    ['Global variable sirf constants se initialise ho sakta hai, doosre variables ya function call se nahi.', 'Use main (ya kisi aur function) ke andar initialise karo.'],
+    ["Array ka size positive hona chahiye.", 'Brackets ke andar ka number check karo.'],
+    ['gets ye limit nahi kar sakta ki kitna padhna hai, isliye buffer overflow ho sakta hai (aur C se hata diya gaya hai).', 'fgets(buf, sizeof buf, stdin) use karo.'],
+    ['Variadic functions supported hain; ye message nahi aana chahiye.', ''],
+    ['Ye line ek value nikalti hai aur fenk deti hai.', 'Kya aap assignment (=) ya function call karna chahte the?'],
+    ['Indentation se lagta hai ki statement if/loop ka hissa hai, par braces ke bina nahi hota.', 'Body ke around { } lagao, ya indentation theek karo.'],
+    ['switch sirf integer aur character pe chalta hai, string ya float pe nahi.', 'String ke liye if / else if ke saath strcmp use karo.'],
+    ['Do case labels ki value ek jaisi hai.', 'Ek ko hata do ya badal do.'],
+    ['Compiler ko yahan type (jaise int) chahiye tha. Aksar upar kisi ) ya } ki galti hoti hai.', 'Pichli lines mein missing ) ya } dhundo.']
+  ];
+  const runtime = {
+    'heap-overflow': ['Aapne malloc se mili memory ke end ke aage likha (ya padha).', 'Poori memory maango (n * sizeof(type)) aur loop index n se chhota rakho. C string ko aakhri \\0 ke liye ek extra byte chahiye.'],
+    'use-after-free': ['free() ke baad wo memory dobara use kar li.', 'Free karne ke baad pointer ko mat chhuo; free ke turant baad use NULL kar do.'],
+    'double-free': ['Ek hi memory pe free() do baar chal gaya.', 'Har malloc ko sirf ek baar free karo; free ke baad pointer NULL kar do.'],
+    'invalid-free': ['free() ko aisi cheez mili jo malloc se aayi hi nahi thi.', 'Sirf malloc/calloc/realloc se mile pointer ko, jaisa mila waisa hi, free karo.'],
+    'segv': ['Program ne aisi memory chhui jo nahi chhuni thi (NULL pointer, bina value wala pointer, ya read-only string literal).', 'Use se pehle pointer NULL check karo, initialise karo, aur string literal ko badalne se pehle char array mein copy karo.'],
+    'stack-overflow': ['Program ka stack khatam ho gaya: aksar kabhi na rukne wali recursion ya bahut bada local array.', 'Recursion mein base case rakho jo ruk sake, ya bade arrays ko malloc / static bana do.'],
+    'stack-overflow-array': ['Aapne local array ke bahar likha.', 'Array index 0 se size-1 tak hota hai. Loop ki limits dekho.'],
+    'global-overflow': ['Aapne global array ke bahar likha.', 'Array index 0 se size-1 tak hota hai. Loop ki limits dekho.'],
+    'sigfpe': ['Integer ko 0 se divide (ya %) kiya.', 'Divide karne se pehle check karo ki divisor 0 nahi hai.'],
+    'timeout': ['Program bahut der chala; sabse zyada chance infinite loop ka hai.', 'Dekho loop ki condition kabhi false ho sakti hai ya nahi, aur loop variable badal raha hai ya nahi. Tests tab mein limit badha sakte ho.'],
+    'output-limit': ['Program ne bahut zyada output print kiya, shayad kabhi na rukne wale loop mein.', 'Jis loop mein printf hai use check karo.'],
+    'abort': ['abort() call hua.', 'Wo line dhundo jo abort call karti hai ya jo assert fail hua.'],
+    'assert': ['Ek assert() ki condition false thi.', 'Condition dikhati hai ki program ne kya maana tha; dekho wo sach kyun nahi tha.']
+  };
+  CC.explainHi = { rules: rules, runtime: runtime };
+})(typeof globalThis !== 'undefined' ? globalThis : self);

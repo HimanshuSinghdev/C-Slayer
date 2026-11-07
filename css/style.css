@@ -205,3 +205,5 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 #fileSel{min-width:0;flex:1 1 auto}
 @media(max-width:360px){.files{gap:4px;padding-left:8px;padding-right:8px}.files .chip{min-width:30px;padding:7px 5px}#fileSel{min-width:78px}}
 #fileSel{min-height:38px}
+@media(max-width:440px){#btnFormat .lbl{display:none}}
+@media(max-width:380px){.files{gap:3px;padding-left:6px;padding-right:6px}.files .chip{min-width:28px;padding:7px 4px}#fileSel{min-width:44px;padding:7px 4px}}

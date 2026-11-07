@@ -8,6 +8,21 @@ The VM is a sanitizer: out-of-bounds reads/writes, use-after-free, double free, 
 
 Compiler diagnostics mimic `gcc -Wall`: implicit declarations, format-string mismatches, uninitialised or unused variables, missing returns, returning addresses of locals, constant out-of-bounds indexes, and more.
 
+## Features at a glance
+* **Fast:** a JIT (bytecode → JavaScript) runs loops and recursion at near-native speed; dead loops, constant `if`s and closed-form sum loops are optimised away.
+* **Debugger:** step into/over/out, breakpoints, live variables, call stack and heap view.
+* **Interactive input:** `scanf`/`fgets` ask for input live, also on the fast engine.
+* **Format code:** the **⇥ Format** button (or Alt+Shift+F) re-indents by block structure and tidies spacing; only whitespace changes, and Ctrl+Z undoes it.
+* **Explanations in Hinglish:** tap **EN / हिं** in the file bar; every compiler error and runtime crash is explained in simple Hinglish, with how to fix it.
+* **Share link:** copy a link that opens your program on any phone. Themes, text size, autocomplete, installable PWA that works offline.
+
+## Hinglish guide (students ke liye)
+* **Run** dabao: program compile hoke chalta hai. Galti ho to **Problems** tab mein line number ke saath dikhegi, aur neeche seedhi bhasha mein likha hoga *kya hua* aur *kaise theek karein*.
+* **EN / हिं** button se explanations English ya Hinglish mein badlo (yaad rehta hai).
+* **⇥ Format** se code apne aap saaf-suthra ho jata hai (indentation + spacing). Galti ho jaye to Ctrl+Z.
+* **Grade** (✓) dabao: program ko 1–10 mein score milta hai. Score sirf ek run se nahi, balki hidden edge inputs (0, 1, -1, 45) se bhi tay hota hai: agar program kachra (garbage) print kare, crash ho, ya bahut slow ho (jaise exponential recursion), to score kat jata hai. Memory leak pe score 7 se upar nahi jata.
+* **Debug** se line-by-line chalao aur dekho variables kaise badalte hain.
+
 ## The score (1–10)
 | Part | Points |
 |---|---|
@@ -18,7 +33,8 @@ Compiler diagnostics mimic `gcc -Wall`: implicit declarations, format-string mis
 | Style (indentation, comments, naming, line length) | 1 |
 | Structure (function size, nesting depth, `goto`, globals) | 1 |
 
-A program that does not compile scores 1–2; a program that crashes is capped at 6. Add test cases in the **Tests** tab for an exact correctness grade.
+A program that does not compile scores 1–2; a program that crashes is capped at 6.
+Programs that read input are also re-run on hidden edge inputs (0, 1, -1 and 45) with no reference answer needed: garbage output (an uninitialised variable) or a crash caps the score at 5, running out of time on a moderately large input (exponential recursion, say) caps it at 4, and a memory leak caps it at 7. Calibration programs live in `tests/students/` (`fib1.c`–`fib4.c` score 4, 5, 7, 10). Add test cases in the **Tests** tab for an exact correctness grade.
 
 ## Security
 * No `eval`, no `new Function`, no network calls, no third-party requests: everything (CodeMirror, fonts) is vendored.
@@ -41,4 +57,4 @@ The local time zone is UTC.
 Upload the folder to a GitHub repo → Settings → Pages → branch `main`, root. Open the URL on your phone and "Add to Home screen".
 
 ## Develop
-`node tests/diff.js` compares output with real `gcc` on `tests/corpus/*.c`; `node tests/rt.js` checks runtime-error detection; `node tests/fuzz.js` runs the fuzzers.
+`node tests/diff.js` compares output with real `gcc` on `tests/corpus/*.c`; `node tests/rt.js` checks runtime-error detection; `node tests/fuzz.js` runs the fuzzers; `node tests/scoring.js` checks the score bands; `node tests/format.js` proves the formatter keeps behaviour and is idempotent.

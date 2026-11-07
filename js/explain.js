@@ -66,10 +66,17 @@
     'assert': ['An assert() condition was false.', 'The condition shows what the program assumed; find out why it was not true.']
   };
   function fill(t, m) { return t.replace(/\$(\d)/g, (x, i) => (m[+i] !== undefined ? m[+i] : '')); }
+  CC.explainRules = RULES; CC.explainRuntimeTable = RUNTIME;
+  // lang: 'en' (default) or 'hi' (Hinglish, from explain_hi.js). Falls back to English if a line has no translation.
+  CC.lang = 'en';
   CC.explain = function (msg) {
     msg = String(msg);
-    for (const [re, why, fix] of RULES) { const m = re.exec(msg); if (m) return { why: fill(why, m), fix: fill(fix, m) }; }
+    const HI = CC.lang === 'hi' && CC.explainHi;
+    for (let i = 0; i < RULES.length; i++) {
+      const [re, why, fix] = RULES[i]; const m = re.exec(msg);
+      if (m) { const h = HI && HI.rules[i]; return { why: fill(h ? h[0] : why, m), fix: fill(h ? h[1] : fix, m) }; }
+    }
     return null;
   };
-  CC.explainRuntime = function (kind) { const r = RUNTIME[kind]; return r ? { why: r[0], fix: r[1] } : null; };
+  CC.explainRuntime = function (kind) { const h = CC.lang === 'hi' && CC.explainHi && CC.explainHi.runtime[kind]; const r = h || RUNTIME[kind]; return r ? { why: r[0], fix: r[1] } : null; };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

@@ -1,0 +1,21 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 393, height: 800 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+  await p.goto('http://localhost:8765/index.html'); await p.waitForTimeout(500);
+  await p.evaluate(() => document.querySelector('.CodeMirror').CodeMirror.setValue('#include <stdio.h>\nint main(){int x=1\nif(x)\nprintf("hi");\nreturn 0;}\n'));
+  await p.click('#btnFormat');
+  const f = await p.evaluate(() => document.querySelector('.CodeMirror').CodeMirror.getValue());
+  console.log(f);
+  await p.click('#btnRun'); await p.waitForTimeout(800);
+  await p.evaluate(() => document.querySelector('[data-tab="problems"],#tabProblems') && 0);
+  const en = await p.evaluate(() => [...document.querySelectorAll('#probList .why')].map(e => e.textContent)[0]);
+  await p.click('#btnLang'); await p.waitForTimeout(200);
+  const hi = await p.evaluate(() => [...document.querySelectorAll('#probList .why')].map(e => e.textContent)[0]);
+  const lbl = await p.textContent('#btnLang');
+  const ov = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  console.log('EN:', en); console.log('HI:', hi, '| label', lbl, '| hscroll', ov, '| errors', errs);
+  await p.screenshot({ path: '/tmp/fmt.png' });
+  await b.close();
+  process.exit(!hi || hi === en || ov || errs.length ? 1 : 0);
+})();
