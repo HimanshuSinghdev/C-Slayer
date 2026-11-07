@@ -57,6 +57,7 @@
     document.addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { close(); btn.focus(); } });
   })();
+  $('#goClass').onclick = () => { try { save(); } catch (e) { /* */ } location.href = 'class.html'; };
   // explanation language (English / Hinglish)
   function applyLang(l) { window.CC.lang = l; $('#langLbl').textContent = l === 'hi' ? 'Samjhana: Hinglish (tap for English)' : 'Explanations: English (tap for Hinglish)'; $('#btnLang').setAttribute('aria-pressed', l === 'hi' ? 'true' : 'false'); }
   applyLang(LS.get('cs.lang', 'en') === 'hi' ? 'hi' : 'en');
@@ -261,25 +262,9 @@
   const out = $('#out');
   function resetOutput() { out.textContent = ''; outLen = 0; $('#inForm').hidden = true; }
   // ---- share by link: the program travels inside the link itself (after the #), nothing is uploaded anywhere ----
-  const b64 = {
-    enc(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
-    dec(t) { const s = atob(t.replace(/-/g, '+').replace(/_/g, '/')); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
-  };
-  async function pipe(u8, stream, cap) {
-    const out = new Blob([u8]).stream().pipeThrough(stream), rd = out.getReader(), parts = []; let n = 0;
-    for (;;) { const { done, value } = await rd.read(); if (done) break; n += value.length; if (n > cap) { try { rd.cancel(); } catch (e) { /* */ } throw new Error('too big'); } parts.push(value); }
-    const r = new Uint8Array(n); let o = 0; for (const c of parts) { r.set(c, o); o += c.length; } return r;
-  }
-  async function packShare(name, code) {
-    const raw = new TextEncoder().encode(JSON.stringify({ v: 1, n: name, c: code }));
-    if (typeof CompressionStream === 'function') return 'z' + b64.enc(await pipe(raw, new CompressionStream('deflate-raw'), 1 << 20));
-    return 'p' + b64.enc(raw);
-  }
+  const packShare = (name, code) => CC.pack.pack({ v: 1, n: name, c: code });
   async function unpackShare(t) {
-    const body = t.slice(1); let raw = b64.dec(body);
-    if (t[0] === 'z') { if (typeof DecompressionStream !== 'function') throw new Error('unsupported'); raw = await pipe(raw, new DecompressionStream('deflate-raw'), 400000); }
-    else if (t[0] !== 'p') throw new Error('bad link');
-    const o = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
+    const o = await CC.pack.unpack(t);
     if (!o || o.v !== 1 || typeof o.c !== 'string' || o.c.length > 300000) throw new Error('bad link');
     return { name: cleanName(typeof o.n === 'string' ? o.n.slice(0, 40) : '') || 'shared.c', code: o.c };
   }
@@ -487,6 +472,19 @@
       }
       wrap.appendChild(d);
     }
+    { const sb = el('button', 'btn ghost', CC.lang === 'hi' ? 'Result teacher ko bhejo' : 'Send result to teacher'); sb.type = 'button';
+      sb.onclick = async () => {
+        try {
+          let nm = LS.get('cs.student', ''); const ask = prompt(CC.lang === 'hi' ? 'Aapka naam (teacher ko dikhega)' : 'Your name (your teacher will see it)', nm || ''); if (ask === null) return; nm = ask.trim().slice(0, 40); if (!nm) return toast('Please enter a name'); LS.set('cs.student', nm);
+          const passed = m.tests ? m.tests.filter(t => t.pass).length : 0;
+          const code = await CC.pack.pack({ v: 1, k: 'r', n: nm, p: activeProblem || '', f: files[cur].name, s: r.score, g: r.grade, pt: r.parts.map(p => [p.id, p.got, p.max]), t: m.tests ? [passed, m.tests.length] : null, c: cm.getValue(), ts: Date.now() });
+          const url = location.origin + location.pathname.replace(/[^/]*$/, '') + 'class.html#r=' + code;
+          if (url.length > 60000) return toast('Program is too long to send as a link');
+          if (navigator.share) { try { await navigator.share({ title: 'C-Slayer result', url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+          await navigator.clipboard.writeText(url); toast('Result link copied: paste it to your teacher');
+        } catch (e) { toast('Could not make a result link here'); }
+      };
+      wrap.appendChild(sb); }
     wrap.appendChild(creditEl());
     box.appendChild(wrap);
     { const len = fg.getTotalLength ? Math.ceil(fg.getTotalLength()) : 400; fg.style.strokeDasharray = len; fg.style.strokeDashoffset = len; fg.getBoundingClientRect(); fg.style.transition = 'stroke-dashoffset 1.1s cubic-bezier(.45,.05,.25,1) .15s'; requestAnimationFrame(() => { fg.style.strokeDashoffset = '0'; }); }

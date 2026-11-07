@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>C-Slayer · Class results</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/class.css">
+</head>
+<body class="cls">
+<header class="ch">
+  <a href="index.html" class="back" aria-label="Back to the editor">‹ Editor</a>
+  <h1>Class results</h1>
+</header>
+<main class="cm">
+  <p class="hint">Students tap <b>Send result to teacher</b> in the Score tab and send you the link (WhatsApp works). Open each link, or paste several below. Everything stays on this phone.</p>
+  <label class="pl">Paste result links or codes (one per line)
+    <textarea id="paste" rows="3" spellcheck="false" placeholder="https://…/class.html#r=z…"></textarea>
+  </label>
+  <div class="bar">
+    <button id="add" class="btn">Add results</button>
+    <select id="probFilter" aria-label="Filter by problem"></select>
+    <button id="csv" class="btn ghost">Download CSV</button>
+    <button id="wipe" class="btn ghost">Clear all</button>
+  </div>
+  <p id="msg" class="msg" role="status"></p>
+  <div id="stats" class="stats"></div>
+  <div class="tw"><table id="tbl"><thead><tr><th>Student</th><th>Problem</th><th class="n">Score</th><th class="n">Tests</th><th>Sent</th></tr></thead><tbody></tbody></table></div>
+  <section id="detail" class="detail" hidden>
+    <h2 id="dTitle"></h2>
+    <div id="dParts" class="parts"></div>
+    <pre id="dCode"></pre>
+    <button id="dDel" class="btn ghost">Remove this result</button>
+  </section>
+</main>
+<script src="js/pack.js"></script>
+<script src="js/problems.js"></script>
+<script src="js/class.js"></script>
+</body>
+</html>
