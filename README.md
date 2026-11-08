@@ -27,6 +27,9 @@ Compiler diagnostics mimic `gcc -Wall`: implicit declarations, format-string mis
 * **Grade** (✓) dabao: program ko 1–10 mein score milta hai. Score sirf ek run se nahi, balki hidden edge inputs (0, 1, -1, 45) se bhi tay hota hai: agar program kachra (garbage) print kare, crash ho, ya bahut slow ho (jaise exponential recursion), to score kat jata hai. Memory leak pe score 7 se upar nahi jata.
 * **Debug** se line-by-line chalao aur dekho variables kaise badalte hain.
 
+## How close to real C?
+`node tests/ctestsuite.js` runs the public [c-testsuite](https://github.com/c-testsuite/c-testsuite) (it is cloned to /tmp on first use, nothing is vendored): **209 of 220 programs pass**. The 11 that do not use GNU extensions or rare corners: statement expressions `({ ... })`, `[0 ... 3]` range designators, structs passed to `...`, `&(struct S){...}` at file scope, `#line`, `#pragma push_macro`, `<wchar.h>` and calling `printf`/`fprintf` through a function pointer. Every other program is also checked against gcc output in `tests/diff.js` (220 programs).
+
 ## The score (1–10)
 | Part | Points |
 |---|---|

@@ -34,7 +34,7 @@
     const pad = x => String(x).padStart(2, '0');
     const pre = {
       __STDC__: '1', __STDC_VERSION__: '201112L', __STDC_HOSTED__: '1', __GNUC__: '', __linux__: '1',
-      __x86_64__: '1', __CHAR_BIT__: '8', __SIZEOF_INT__: '4', __SIZEOF_LONG__: '8', __SIZEOF_POINTER__: '8',
+      __x86_64__: '1', __LP64__: '1', _LP64: '1', __CHAR_BIT__: '8', __SIZEOF_INT__: '4', __SIZEOF_LONG__: '8', __SIZEOF_POINTER__: '8',
     };
     for (const k in pre) {
       if (pre[k] === '') continue;

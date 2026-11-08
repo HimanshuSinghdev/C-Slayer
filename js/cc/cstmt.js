@@ -780,7 +780,7 @@
         stores.push({ kind: 10, off: fn.retbuf });
       }
       const pinfo = type.pinfo || [];
-      if (type.unspecified && pinfo.length === 0 && node.decl.suffix[0].params.length) { /* K&R style params not supported */ }
+      if (type.unspecified && pinfo.length === 0 && node.decl.suffix[0] && node.decl.suffix[0].params.length) { /* K&R style params not supported */ }
       for (const p of pinfo) {
         let off, ptype = p.type;
         if (ptype.k === 'struct') {

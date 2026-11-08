@@ -14,7 +14,24 @@
 
   class Abort extends Error {}
 
+  // GNU __attribute__((...)) and __extension__ are accepted and ignored (they never change what a plain program means)
+  function dropAttributes(tokens) {
+    if (!tokens.some(t => t.k === 'id' && (t.v === '__attribute__' || t.v === '__attribute' || t.v === '__extension__'))) return tokens;
+    const out = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t.k === 'id' && t.v === '__extension__') continue;
+      if (t.k === 'id' && (t.v === '__attribute__' || t.v === '__attribute') && tokens[i + 1] && tokens[i + 1].v === '(') {
+        let d = 0, j = i + 1;
+        for (; j < tokens.length; j++) { if (tokens[j].v === '(') d++; else if (tokens[j].v === ')') { d--; if (d === 0) break; } }
+        i = j; continue;
+      }
+      out.push(t);
+    }
+    return out;
+  }
   function parse(tokens) {
+    tokens = dropAttributes(tokens);
     let p = 0;
     const errors = [];
     const typedefScopes = [new Map()];
@@ -224,7 +241,7 @@
         const t = cur();
         if (isP('(')) {
           const n1 = peek(1);
-          const innerStarts = (n1.k === 'punc' && (n1.v === '*' || n1.v === '(' || n1.v === '^')) || (n1.k === 'id' && !KEYWORDS.has(n1.v) && !isTypedef(n1.v)) || (n1.k === 'id' && n1.v === '__attribute__');
+          const innerStarts = (n1.k === 'punc' && (n1.v === '*' || n1.v === '(' || n1.v === '^' || n1.v === '[')) || (n1.k === 'id' && !KEYWORDS.has(n1.v) && !isTypedef(n1.v)) || (n1.k === 'id' && n1.v === '__attribute__');
           if (innerStarts) {
             next();
             d.inner = parseDeclarator(abstractOk);
@@ -672,13 +689,15 @@
       const items = [];
       for (;;) {
         const decl = parseDeclarator(false);
-        const isFn = decl.suffix.length && decl.suffix[0].k === 'fn' && !decl.inner;
+        // the declarator that carries the name (int (*f(int a))(int b) {...} names f through two levels)
+        let nd = decl; while (nd.inner) nd = nd.inner;
+        const isFn = nd.suffix.length && nd.suffix[0].k === 'fn' && (!decl.inner || !decl.suffix.length || decl.suffix[0].k === 'fn');
         if (topLevel && isFn && isP('{')) {
           // function definition
           if (spec.storage === 'typedef') { err(cur(), 'function definition declared \'typedef\''); }
-          declareName(decl.name, false);
+          declareName(nd.name || decl.name, false);
           pushScope();
-          const fn = decl.suffix[0];
+          const fn = nd.suffix[0];
           for (const prm of fn.params) if (prm.decl.name) declareName(prm.decl.name, false);
           const body = parseBlock();
           popScope();

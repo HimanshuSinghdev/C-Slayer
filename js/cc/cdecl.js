@@ -128,14 +128,16 @@
       let et = node.tag ? C.lookupTag(node.tag) : null;
       if (!et || et.k !== 'enum') { et = { k: 'enum', tag: node.tag }; if (node.tag) C.tagScopes[C.tagScopes.length - 1].set(node.tag, et); }
       if (node.items) {
-        let next = 0n;
+        let next = 0n; et.neg = false;
         for (const it of node.items) {
           if (it.value) { const v = C.constInt(it.value); if (v === null) { C.error(it, "enumerator value for '" + it.name + "' is not an integer constant"); } else next = v; }
+          if (next < 0n) et.neg = true;
           C.declareSym(it.name, { kind: 'enum', name: it.name, value: next, type: T.int, line: it.line });
           next += 1n;
         }
       }
-      return T.int;
+      // like gcc: an enum with no negative enumerators is an unsigned int (matters for bit-fields and for e - 1)
+      return et.neg === true ? T.int : T.uint;
     }
 
     /** declaration specifiers -> base type */
