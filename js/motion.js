@@ -8,13 +8,14 @@
   function write(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
   var on = read();
   function label() { var l = document.getElementById('fxLbl'), b = document.getElementById('btnFx'); if (!l || !b) return;
-    l.textContent = osReduced ? 'Animations: off (phone setting)' : on ? 'Animations: on (tap to turn off)' : 'Animations: off (tap to turn on)';
+    l.textContent = osReduced ? 'Animations: off (phone setting)' : on ? (root.classList.contains('fx-lite') ? 'Animations: light, set by the app (tap to turn off)' : 'Animations: on (tap to turn off)') : 'Animations: off (tap to turn on)';
     b.setAttribute('aria-pressed', on && !osReduced ? 'true' : 'false'); }
   function apply() { root.classList.toggle('fx', on && !osReduced); label(); place(true); }
 
   // ---- sliding tab bar ----
-  var tabs = document.querySelector('.tabs'), ind = null;
-  function place(snap) {
+  var tabs = document.querySelector('.tabs'), ind = null, placeQ = 0, placeSnap = false;
+  function place(snap) { placeSnap = placeSnap || !!snap; if (placeQ) return; placeQ = requestAnimationFrame(function () { placeQ = 0; var s = placeSnap; placeSnap = false; placeNow(s); }); }
+  function placeNow(snap) {
     if (!tabs) return;
     if (!root.classList.contains('fx')) { if (ind) ind.style.display = 'none'; return; }
     if (!ind) { ind = document.createElement('i'); ind.className = 'fx-ind'; ind.setAttribute('aria-hidden', 'true'); tabs.appendChild(ind); }
@@ -42,7 +43,32 @@
     }); });
   }).observe(out, { childList: true });
 
+
+  // ---- the grade circle: hold the pen until the report has been built and painted, so the stroke never starts on a long frame ----
+  var box = document.getElementById('scoreBox');
+  if (box) new MutationObserver(function () {
+    var g = box.querySelector('.grade'); if (!g || g.classList.contains('fx-arm') || !root.classList.contains('fx')) return;
+    g.classList.add('fx-arm');
+    requestAnimationFrame(function () { requestAnimationFrame(function () { g.classList.add('fx-go'); watch(900); }); });
+  }).observe(box, { childList: true });
+
+  // ---- weak-phone guard: if frames keep running long while something animates, drop to a lighter set of animations on its own ----
+  var jank = 0, watching = false;
+  try { if (localStorage.getItem('cs.fxlite') === '1') root.classList.add('fx-lite'); } catch (e) { /* storage unavailable */ }
+  function watch(ms) {
+    if (watching || root.classList.contains('fx-lite') || !root.classList.contains('fx')) return;
+    watching = true; var end = performance.now() + ms, last = performance.now(), bad = 0;
+    (function f(t) {
+      if (t - last > 45) bad++; last = t;
+      if (t < end) return requestAnimationFrame(f);
+      watching = false; if (bad >= 2) jank++;
+      if (jank >= 2) { root.classList.add('fx-lite'); try { localStorage.setItem('cs.fxlite', '1'); } catch (e) { /* storage unavailable */ } label(); }
+    })(performance.now());
+    requestAnimationFrame(function () { });
+  }
+  if (tabs) tabs.addEventListener('click', function () { watch(450); });
+
   var btn = document.getElementById('btnFx');
-  if (btn) btn.addEventListener('click', function () { if (osReduced) return; on = !on; write(on); apply(); });
+  if (btn) btn.addEventListener('click', function () { if (osReduced) return; on = !on; write(on); if (on) { root.classList.remove('fx-lite'); jank = 0; try { localStorage.removeItem('cs.fxlite'); } catch (e) { /* storage unavailable */ } } apply(); });
   apply();
 })();

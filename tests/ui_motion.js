@@ -35,6 +35,18 @@ const { chromium } = require('playwright');
   await p.click('#btnClearOut'); await p.waitForTimeout(100);
   const t = await p.evaluate(async () => { const t = document.querySelector('#toast'); document.querySelector('#btnFormat').click(); await new Promise(r => setTimeout(r, 400)); const shown = getComputedStyle(t).opacity; await new Promise(r => setTimeout(r, 2500)); return { shown, hidden: getComputedStyle(t).visibility }; });
   ck(t.shown === '1' && t.hidden === 'hidden', 'toast in then out ' + JSON.stringify(t));
+  // grade reveal: armed, then drawn, ends fully visible; light mode shows the same end state with no stroke animation
+  const fs = require('fs');
+  await p.evaluate(src => document.querySelector('.CodeMirror').CodeMirror.setValue(src), fs.readFileSync(__dirname + '/students/fib2.c', 'utf8'));
+  await p.click('#btnScore'); await p.waitForSelector('.grade.fx-go', { timeout: 30000 }); await p.waitForTimeout(1300);
+  const gr = await p.evaluate(() => { const g = document.querySelector('.grade'); return { off: getComputedStyle(g.querySelector('path')).strokeDashoffset, op: getComputedStyle(g.querySelector('.num')).opacity }; });
+  ck(parseFloat(gr.off) === 0 && gr.op === '1', 'grade ends fully drawn ' + JSON.stringify(gr));
+  await p.evaluate(() => document.documentElement.classList.add('fx-lite'));
+  const lite = await p.evaluate(() => getComputedStyle(document.querySelector('.grade path')).animationName);
+  ck(lite === 'none', 'light mode drops the stroke animation');
+  await p.click('#btnMore'); await p.waitForTimeout(250); await p.click('#btnFx'); await p.waitForTimeout(150);
+  await p.click('#btnMore'); await p.waitForTimeout(250); await p.click('#btnFx'); await p.waitForTimeout(200);
+  ck(await p.evaluate(() => document.documentElement.classList.contains('fx') && !document.documentElement.classList.contains('fx-lite')), 'turning animations back on clears light mode');
   ck(!errs.length, 'page errors ' + errs);
   await ctx.close();
   // reduced motion

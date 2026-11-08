@@ -72,8 +72,17 @@
   html.fx .toast[hidden] { display: block; opacity: 0; visibility: hidden; transform: translate(-50%, 10px); pointer-events: none; transition: opacity var(--t2) var(--ease-in), transform var(--t2) var(--ease-in), visibility 0s var(--t2); }
 
   /* ---- the one signature moment: the grade is circled in red pen, then the mark is written inside ---- */
-  html.fx .grade path { stroke-dasharray: 420; stroke-dashoffset: 420; animation: fx-pen 650ms cubic-bezier(.45, .05, .25, 1) 80ms forwards; }
-  html.fx .grade .num { opacity: 0; animation: fx-write 260ms var(--ease) 480ms forwards; }
+  html.fx .grade.fx-arm path { stroke-dasharray: 420; stroke-dashoffset: 420; }
+  html.fx .grade.fx-arm .num { opacity: 0; }
+  html.fx .grade.fx-go path { animation: fx-pen 650ms cubic-bezier(.45, .05, .25, 1) forwards; }
+  html.fx .grade.fx-go .num { animation: fx-write 260ms var(--ease) 420ms forwards; }
   @keyframes fx-pen { to { stroke-dashoffset: 0; } }
   @keyframes fx-write { from { opacity: 0; transform: translateY(4px) rotate(-3deg) scale(.94); } to { opacity: 1; transform: none; } }
+
+  /* ---- light mode (set automatically on phones that drop frames): keep feedback, drop the heavy movement ---- */
+  html.fx-lite .tabpane.on { animation: none; }
+  html.fx-lite .grade.fx-go path { animation: none; stroke-dashoffset: 0; }
+  html.fx-lite .grade.fx-go .num { animation-duration: 1ms; animation-delay: 0s; }
+  html.fx-lite body[data-state=running] #btnStop::after { animation: none; }
+  html.fx-lite .out > .fx-in, html.fx-lite .tres { animation: none; }
 }
