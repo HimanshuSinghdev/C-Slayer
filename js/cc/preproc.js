@@ -96,7 +96,7 @@
         return true;
       }
       if (m.builtin) { w.splice(i, 1, m.builtin(t)); w[i].hide = new Set([t.v]); return true; }
-      const add = new Set(t.hide || []); add.add(t.v);
+      let add = new Set(t.hide || []); add.add(t.v);
       if (!m.params) {
         const rep = m.body.map((b, idx) => {
           const c = addHide(b, add);
@@ -127,6 +127,8 @@
         err(t, "unterminated argument list invoking macro \"" + t.v + "\"");
         w.splice(i, 1); return true;
       }
+      { // standard hide-set rule for function-like macros: (hide(name) ∩ hide(')')) ∪ {name}, so a name pasted at the end of one macro can still call another
+        const rp = w[j].hide || new Set(), nh = new Set(); for (const x of (t.hide || [])) if (rp.has(x)) nh.add(x); nh.add(t.v); add = nh; }
       const np = m.params.length;
       if (np === 0 && args.length === 1 && args[0].length === 0) args.length = 0;
       if (m.variadic) {
@@ -241,17 +243,21 @@
         bad('token "' + t.v + '" is not valid in preprocessor expressions');
       }
       const PREC = { '*': 10, '/': 10, '%': 10, '+': 9, '-': 9, '<<': 8, '>>': 8, '<': 7, '>': 7, '<=': 7, '>=': 7, '==': 6, '!=': 6, '&': 5, '^': 4, '|': 3, '&&': 2, '||': 1 };
+      let skipDepth = 0;   // inside the unevaluated side of && || ?: (so 0 && (1/0) is fine)
       function bin(minP) {
         let l = prim();
         for (;;) {
           const t = peek();
           if (!t || t.k !== 'punc' || !(t.v in PREC) || PREC[t.v] < minP) return l;
           p++;
+          const sc = (t.v === '&&' && l === 0n) || (t.v === '||' && l !== 0n);
+          if (sc) skipDepth++;
           const r = bin(PREC[t.v] + 1);
+          if (sc) skipDepth--;
           switch (t.v) {
             case '*': l = l * r; break;
-            case '/': if (r === 0n) bad('division by zero in #if'); l = l / r; break;
-            case '%': if (r === 0n) bad('division by zero in #if'); l = l % r; break;
+            case '/': if (r === 0n) { if (!skipDepth) bad('division by zero in #if'); l = 0n; } else l = l / r; break;
+            case '%': if (r === 0n) { if (!skipDepth) bad('division by zero in #if'); l = 0n; } else l = l % r; break;
             case '+': l = l + r; break;
             case '-': l = l - r; break;
             case '<<': l = l << r; break;
@@ -274,9 +280,9 @@
         const c = bin(1);
         const t = peek();
         if (t && t.k === 'punc' && t.v === '?') {
-          p++; const a = cond();
+          p++; if (c === 0n) skipDepth++; const a = cond(); if (c === 0n) skipDepth--;
           const colon = pre[p++]; if (!colon || colon.v !== ':') bad("expected ':' in conditional expression");
-          const b = cond();
+          if (c !== 0n) skipDepth++; const b = cond(); if (c !== 0n) skipDepth--;
           return c !== 0n ? a : b;
         }
         return c;

@@ -131,9 +131,17 @@
   function link(C, opts) {
     const libc = CC.libc;
     const builtinIdx = new Map(); C.builtinList = [];
-    const useBuiltin = (name) => {
-      let i = builtinIdx.get(name);
-      if (i === undefined) { i = C.builtinList.length; C.builtinList.push(libc.table.get(name)); builtinIdx.set(name, i); }
+    // A program may redeclare a library function with a narrower return type (int strlen(char*)): like real C on a 64-bit machine,
+    // the caller then sees only the low bits of the result.
+    const useBuiltin = (name, ret) => {
+      const narrow = ret && ret.k === 'int' && ret.size <= 4 ? (ret.signed ? 's' : 'u') + ret.size : '';
+      const key = name + narrow;
+      let i = builtinIdx.get(key);
+      if (i === undefined) {
+        i = C.builtinList.length; const b = libc.table.get(name);
+        C.builtinList.push(narrow ? { name: b.name, fn: (vm, a) => { const r = b.fn(vm, a); return typeof r === 'bigint' ? Number(narrow[0] === 's' ? BigInt.asIntN(+narrow.slice(1) * 8, r) : BigInt.asUintN(+narrow.slice(1) * 8, r)) : r; } } : b);
+        builtinIdx.set(key, i);
+      }
       return i;
     };
     const reported = new Set();
@@ -141,7 +149,7 @@
       const s = f.sym;
       if (s.defined) continue;
       if (libc.table.has(s.name)) {
-        C.code[f.pc] = OP.CALLB; C.code[f.pc + 1] = useBuiltin(s.name); C.code[f.pc + 2] = f.argc;
+        if (f.pc >= 0) { C.code[f.pc] = OP.CALLB; C.code[f.pc + 1] = useBuiltin(s.name, s.type && s.type.k === 'func' ? s.type.ret : null); C.code[f.pc + 2] = f.argc; }   // pc -1: the call was in a dropped dead branch
         s.builtin = true;
         continue;
       }

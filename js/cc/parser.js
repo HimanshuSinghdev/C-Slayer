@@ -611,7 +611,13 @@
             }
             case 'switch': {
               next(); expectP('('); const e = parseExpr(); expectP(')');
-              const body = parseStatement();
+              let body = parseStatement();
+              // switch (x) case 1: stmt;  -- the labels (and the statement after them) are the whole body
+              if (body.k === 'Case' || body.k === 'Default') {
+                const items = [body];
+                while (items[items.length - 1].k === 'Case' || items[items.length - 1].k === 'Default') items.push(parseStatement());
+                body = { k: 'Block', items, line: body.line, col: body.col, endLine: lastTok.line };
+              }
               return { k: 'Switch', e, body, line: t.line, col: t.col, endLine: lastTok.line };
             }
             case 'case': {

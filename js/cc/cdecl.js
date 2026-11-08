@@ -468,7 +468,7 @@
         if (t.k === 'array') {
           const lim = t.n === null ? Infinity : t.n;
           let idx = 0;
-          while (cur.i < items.length && idx < lim) {
+          while (cur.i < items.length && (idx < lim || (braced && items[cur.i].designators.length))) {
             const it = items[cur.i];
             if (it.designators.length) {
               if (!braced) break;

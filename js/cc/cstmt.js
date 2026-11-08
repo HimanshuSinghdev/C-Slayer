@@ -241,11 +241,23 @@
     C.newLoop = function (isSwitch) { return { breakL: C.newLabel(), contL: isSwitch ? null : C.newLabel(), isSwitch }; };
 
     /** conservative "this statement never falls through" check for missing-return warnings */
+    function hasLabel(n) {
+      if (!n || typeof n !== 'object') return false;
+      if (Array.isArray(n)) return n.some(hasLabel);
+      if (n.k === 'Label' || n.k === 'Case' || n.k === 'Default') return true;
+      for (const key in n) if (key !== 'type' && key !== 'sym' && hasLabel(n[key])) return true;
+      return false;
+    }
     function alwaysReturns(s) {
       if (!s) return false;
       switch (s.k) {
         case 'Return': case 'Goto': return true;
-        case 'Block': { for (const it of s.items) if (alwaysReturns(it)) return true; return false; }
+        case 'Block': {
+          // a later statement that carries a label can be reached by goto/case even after a return, so it restarts reachability
+          let done = false;
+          for (const it of s.items) { if (hasLabel(it)) done = false; if (alwaysReturns(it)) done = true; }
+          return done;
+        }
         case 'If': return !!s.b && alwaysReturns(s.a) && alwaysReturns(s.b);
         case 'Label': return alwaysReturns(s.s);
         case 'While': case 'For': case 'DoWhile': {
@@ -538,9 +550,9 @@
               const live = cv.v !== 0n ? s.a : s.b, dead = cv.v !== 0n ? s.b : s.a;
               if (!dead || deadBranchOk(dead)) {
                 if (dead) {
-                  const sc = C.code, sl = C.lines, sf = C.fixups.length;
-                  C.code = []; C.lines = [];
-                  try { C.genScoped(dead); } finally { C.code = sc; C.lines = sl; for (let i = sf; i < C.fixups.length; i++) C.fixups[i].pc = -1; }  // library/undefined calls stay linked (and reported) but patch nothing
+                  // generate the dead branch in place, then cut it off again (its own jumps only patch inside the cut part)
+                  const n0 = C.code.length, l0 = C.lines.length, sf = C.fixups.length;
+                  try { C.genScoped(dead); } finally { C.code.length = n0; C.lines.length = l0; for (let i = sf; i < C.fixups.length; i++) C.fixups[i].pc = -1; }  // library/undefined calls stay linked (and reported) but patch nothing
                 }
                 if (live) C.genScoped(live);
                 return;

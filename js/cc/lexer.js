@@ -32,7 +32,8 @@
     const err = (msg, l, c) => errors.push({ line: l || line, col: c || (i - lineStart + 1), msg, sev: 'error' });
 
     while (i < n) {
-      const c = src.charCodeAt(i);
+      let c = src.charCodeAt(i), wide = false;
+      if ((c === 76 || c === 117 || c === 85) && src.charCodeAt(i + 1) === 39) { wide = true; i++; c = 39; }   // L'x', u'x', U'x': one wide character (a plain int here)
       // whitespace / newline / line splice
       if (c === 10) { i++; line++; lineStart = i; bol = true; sp = true; continue; }
       if (c === 32 || c === 9 || c === 11 || c === 12) { i++; sp = true; continue; }
@@ -123,14 +124,14 @@
           if (ch === 10) break;
           if (ch === 92) { const r = readEscape(src, i, err, line, lineStart); vals.push(r.val); i = r.next; continue; }
           const cp = src.codePointAt(i);
-          const b = []; utf8Push(b, cp);
-          for (const x of b) vals.push(x);
+          if (wide) vals.push(cp); else { const b = []; utf8Push(b, cp); for (const x of b) vals.push(x); }
           i += cp > 0xFFFF ? 2 : 1;
         }
         if (!closed) err("missing terminating ' character", tok.line, col);
         else if (vals.length === 0) err('empty character constant', tok.line, col);
         let val = 0;
-        if (vals.length === 1) val = vals[0] > 127 ? vals[0] - 256 : vals[0];
+        if (wide) val = vals.length ? vals[vals.length - 1] | 0 : 0;
+        else if (vals.length === 1) val = vals[0] > 127 ? vals[0] - 256 : vals[0];
         else for (const x of vals) val = ((val << 8) | (x & 255)) | 0;
         tok.k = 'chr'; tok.v = src.slice(s, i); tok.val = val;
         tokens.push(tok); continue;
