@@ -1,0 +1,73 @@
+/* Motion layer. Everything is scoped to html.fx and to prefers-reduced-motion: no-preference, so it can be switched off
+   (⋯ menu → Animations) or deleted without touching style.css. Only opacity and transform are animated. */
+@media (prefers-reduced-motion: no-preference) {
+  html.fx {
+    --ease: cubic-bezier(.2, .8, .2, 1);   /* fast out, soft landing */
+    --ease-in: cubic-bezier(.4, 0, 1, 1);
+    --t1: 120ms; --t2: 180ms; --t3: 240ms;
+  }
+
+  /* ---- buttons: lift on hover, press on tap ---- */
+  html.fx .btn { position: relative; transition: transform var(--t1) var(--ease), box-shadow var(--t1) var(--ease), opacity var(--t2) var(--ease); }
+  @media (hover: hover) {
+    html.fx .btn:not([disabled]):not(.quiet):hover { transform: translateY(-1px); box-shadow: 0 3px 0 var(--tx); }
+    html.fx .btn.ember:not([disabled]):hover { box-shadow: 0 3px 0 var(--ember); }
+    html.fx .btn.danger:not([disabled]):hover { box-shadow: 0 3px 0 var(--ember); }
+    html.fx .btn.quiet:not([disabled]):hover { transform: translateY(-1px); }
+  }
+  html.fx .btn:not([disabled]):active { transform: translateY(2px) scale(.98); transition-duration: 60ms; }
+  html.fx .ibtn { transition: transform var(--t1) var(--ease); }
+  html.fx .ibtn:active { transform: scale(.92); }
+
+  /* ---- running: glowing ring pulses on Stop, a spinner replaces the tick on Grade ---- */
+  html.fx .btn::after {
+    content: ""; position: absolute; inset: -4px; border: 1.5px solid var(--ember); border-radius: 9px;
+    opacity: 0; pointer-events: none; transform: scale(.98);
+  }
+  html.fx body[data-state=running] #btnStop::after { animation: fx-glow 1.4s var(--ease) infinite; }
+  @keyframes fx-glow { 0% { opacity: .55; transform: scale(.98); } 70%, 100% { opacity: 0; transform: scale(1.12); } }
+
+  html.fx #btnScore[disabled] { opacity: 1; color: var(--dim); border-color: var(--line); box-shadow: none; }
+  html.fx #btnScore[disabled] svg { opacity: 0; }
+  html.fx #btnScore[disabled]::before {
+    content: ""; position: absolute; left: 13px; top: 50%; width: 14px; height: 14px; margin-top: -7px;
+    border: 2px solid var(--ember); border-right-color: transparent; border-radius: 50%;
+    animation: fx-spin .8s linear infinite;
+  }
+  @keyframes fx-spin { to { transform: rotate(360deg); } }
+  @media (max-width: 520px) { html.fx #btnScore[disabled]::before { left: 12px; } }
+  @media (max-width: 360px) { html.fx #btnScore[disabled]::before { left: 11px; } }
+
+  /* ---- tabs: one bar slides under the active tab (positioned by motion.js), panels fade and rise ---- */
+  html.fx .tabs { position: relative; }
+  html.fx .tabs button.on { text-decoration: none; }
+  html.fx .tabs button { transition: color var(--t2) var(--ease); }
+  html.fx .tabs .fx-ind {
+    position: absolute; left: 0; bottom: 0; width: 100px; height: 2px; background: var(--ember); border-radius: 2px;
+    transform-origin: 0 0; pointer-events: none; transition: transform var(--t3) var(--ease);
+  }
+  html.fx .tabs .fx-ind.snap { transition: none; }
+  html.fx .tabpane { animation: none; }
+  html.fx .tabpane.on { animation: fx-pane var(--t3) var(--ease) both; }
+  @keyframes fx-pane { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ---- console: new output rises in; the exit badge and errors arrive a touch slower ---- */
+  html.fx .out > .fx-in, html.fx .out > .g, html.fx .out > .e, html.fx .out > .u { animation: fx-line var(--t2) var(--ease) both; }
+  html.fx .out > .g, html.fx .out > .e { animation-duration: var(--t3); }
+  @keyframes fx-line { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  html.fx .out > .fx-in { display: inline-block; vertical-align: top; }
+  html.fx .out > .fx-in.fx-multi { display: inline; }
+
+  /* ---- test results: green or red wash fades off each row ---- */
+  html.fx .tres { position: relative; animation: fx-line var(--t3) var(--ease) both; }
+  html.fx .tres::before { content: ""; position: absolute; inset: -2px -6px; border-radius: 5px; opacity: 0; pointer-events: none; }
+  html.fx .tres:has(.p)::before { background: var(--ok); animation: fx-flash 700ms var(--ease) both; }
+  html.fx .tres:has(.f)::before { background: var(--err); animation: fx-flash 900ms var(--ease) both; }
+  @keyframes fx-flash { 0% { opacity: .22; } 100% { opacity: 0; } }
+
+  /* ---- ⋯ menu and toast: they stay in layout while hidden so they can fade out ---- */
+  html.fx .menu { transform-origin: 100% 0; transition: opacity var(--t2) var(--ease), transform var(--t2) var(--ease), visibility 0s; }
+  html.fx .menu[hidden] { display: block; opacity: 0; visibility: hidden; transform: scale(.96) translateY(-4px); pointer-events: none; transition: opacity var(--t1) var(--ease-in), transform var(--t1) var(--ease-in), visibility 0s var(--t1); }
+  html.fx .toast { animation: none; transition: opacity var(--t2) var(--ease), transform var(--t3) var(--ease), visibility 0s; }
+  html.fx .toast[hidden] { display: block; opacity: 0; visibility: hidden; transform: translate(-50%, 10px); pointer-events: none; transition: opacity var(--t2) var(--ease-in), transform var(--t2) var(--ease-in), visibility 0s var(--t2); }
+}
