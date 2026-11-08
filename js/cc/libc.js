@@ -633,7 +633,7 @@
   def('srand', (vm, a) => { seedRand(vm, a[0]); });
   def('rand', (vm) => { if (!vm.rng) seedRand(vm, 1); return nextRand(vm); });
   def('getenv', () => 0);
-  def('system', () => -1);
+  def('system', (vm, a) => (a[0] === 0 ? 0 : -1)); // no shell exists here: system(NULL) is 0, any command fails
 
   // ---------------------------------------------------------------- string.h / memory
   def('strlen', (vm, a) => BigInt(vm.cstrLen(num(a[0]))));
