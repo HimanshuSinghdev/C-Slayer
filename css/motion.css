@@ -70,4 +70,10 @@
   html.fx .menu[hidden] { display: block; opacity: 0; visibility: hidden; transform: scale(.96) translateY(-4px); pointer-events: none; transition: opacity var(--t1) var(--ease-in), transform var(--t1) var(--ease-in), visibility 0s var(--t1); }
   html.fx .toast { animation: none; transition: opacity var(--t2) var(--ease), transform var(--t3) var(--ease), visibility 0s; }
   html.fx .toast[hidden] { display: block; opacity: 0; visibility: hidden; transform: translate(-50%, 10px); pointer-events: none; transition: opacity var(--t2) var(--ease-in), transform var(--t2) var(--ease-in), visibility 0s var(--t2); }
+
+  /* ---- the one signature moment: the grade is circled in red pen, then the mark is written inside ---- */
+  html.fx .grade path { stroke-dasharray: 420; stroke-dashoffset: 420; animation: fx-pen 650ms cubic-bezier(.45, .05, .25, 1) 80ms forwards; }
+  html.fx .grade .num { opacity: 0; animation: fx-write 260ms var(--ease) 480ms forwards; }
+  @keyframes fx-pen { to { stroke-dashoffset: 0; } }
+  @keyframes fx-write { from { opacity: 0; transform: translateY(4px) rotate(-3deg) scale(.94); } to { opacity: 1; transform: none; } }
 }
