@@ -6,7 +6,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
   };
-  const MAX_OUT = 1000000;
+  const MAX_OUT = 200000;   // the console keeps this much text; more only makes a phone crawl
 
   // ---------------- state ----------------
   let files = LS.get('cs.files', null);
@@ -303,8 +303,9 @@
     if (!cls) { const last = out.lastChild; if (last && last.nodeType === 3) { last.nodeValue += text; } else out.appendChild(document.createTextNode(text)); }
     else { const s = document.createElement('span'); s.className = cls; s.textContent = text; out.appendChild(s); }
     if (outLen > MAX_OUT) { const s = document.createElement('span'); s.className = 'm'; s.textContent = '\n… output truncated …'; out.appendChild(s); }
-    out.scrollTop = out.scrollHeight;
+    if (!scrollQ) scrollQ = requestAnimationFrame(() => { scrollQ = 0; out.scrollTop = out.scrollHeight; });   // once per frame: reading layout after every chunk made a printing loop freeze the page
   }
+  let scrollQ = 0;
   function setState(s) { document.body.dataset.state = s; }
 
   // ---------------- problems ----------------

@@ -12,6 +12,7 @@ const SCORE_RUN_MS = 10000;     // main run during scoring
 const TEST_RUN_MS = 5000;       // each test case
 const TIME_CHOICES = [10, 30, 60, 120, 300], HEAP_CHOICES = [32, 64, 128, 256];
 function pick(list, v, d) { v = +v; return list.indexOf(v) >= 0 ? v : d; }
+const OUT_SEND_CAP = 220000;   // a little over the screen's own cap (MAX_OUT in app.js)
 function limitsOf(m) { const l = (m && m.limits) || {}; return { timeMs: pick(TIME_CHOICES, l.timeSec, 30) * 1000, heapMB: pick(HEAP_CHOICES, l.heapMB, 64) }; }
 const MAX_TESTS = 25, MAX_TEST_TEXT = 20000, SLICE = 150000;
 
@@ -80,8 +81,17 @@ async function handleRun(m, debugging) {
   const post = (fd, str) => {
     if (skip[fd] > 0) { const k = Math.min(skip[fd], str.length); skip[fd] -= k; str = str.slice(k); if (!str.length) return; }
     shown[fd] += str.length;
-    postMessage({ type: 'out', id, fd, s: str });
+    // Batch: one message per printf floods the page when a loop prints forever and freezes it (even the Stop button). Send
+    // merged text every ~50 ms, and nothing past what the screen keeps anyway.
+    if (sentChars > OUT_SEND_CAP) return;
+    sentChars += str.length;
+    const last = pend[pend.length - 1];
+    if (last && last.fd === fd) last.s += str; else pend.push({ fd, s: str });
+    pendLen += str.length;
+    if (pendLen > 32768 || performance.now() - lastSend > 50) sendOut();
   };
+  let pend = [], pendLen = 0, sentChars = 0, lastSend = performance.now();
+  const sendOut = () => { lastSend = performance.now(); if (!pend.length) return; const list = pend; pend = []; pendLen = 0; for (const q of list) postMessage({ type: 'out', id, fd: q.fd, s: q.s }); };
   s.stdinAll = ''; s.eof = false; const startMs = Date.now();
   // Turbo: translate to JS and let the browser's JIT run it. When the program needs more keyboard input the run is
   // paused by *replaying*: ask for the line, then run again from the top with everything typed so far, hiding the text
@@ -100,7 +110,7 @@ async function handleRun(m, debugging) {
       if (status !== 'wait') break;
       if (s.stopped) { status = 'stopped'; break; }
       const had = s.stdinAll.length;
-      await new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); });
+      sendOut(); await new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); });
       if (s.stopped) { status = 'stopped'; break; }
       if (s.stdinAll.length === had && !s.eof) { s.eof = true; }   // woken with nothing new: treat as end of input
     }
@@ -108,15 +118,16 @@ async function handleRun(m, debugging) {
   }
   while (status === undefined) {
     status = await drive(s, lim.timeMs, post,
-      () => new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }));
+      () => { sendOut(); return new Promise(res => { s.wake = res; postMessage({ type: 'wait', id }); }); });
     if (status === 'break') {
-      postMessage({ type: 'paused', id, snap: vm.inspect() });
+      sendOut(); postMessage({ type: 'paused', id, snap: vm.inspect() });
       await new Promise(res => { s.resume = res; });
       if (s.stopped) { status = 'stopped'; break; }
       status = undefined;
     }
   }
   if (session !== s) return;       // superseded
+  sendOut();
   let err = status === 'error' ? plainErr(vm.error, c.fileTable) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
   postMessage({
     type: 'end', id, compiled: true, status, exit: status === 'done' ? vm.exitCode : null, error: err,
