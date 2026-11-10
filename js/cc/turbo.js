@@ -42,7 +42,7 @@
 
   // ---------- 64-bit helpers: identical to the VM's cases ----------
   function makeLF(vm) {
-    const { nI, big, wrapL, wrapUL, SAFE, I64_MIN } = H;
+    const { nI, nU, big, wrapL, wrapUL, SAFE, I64_MIN } = H;
     const DZ = (pc, fn, fp) => { vm.pc = pc; vm.curFn = fn; vm.fp = fp; vm.fail('sigfpe', 'Floating point exception: integer division by zero'); };
     return {
       DZ,
@@ -67,17 +67,17 @@
       MUL_UL(a, b) { if (typeof a === 'number' && typeof b === 'number') { const v = a * b; if (v <= SAFE) return v; } return wrapUL(big(a) * big(b)); },
       DIV_UL(a, b, pc, fn, fp) {
         if (typeof a === 'number' && typeof b === 'number') { if (b === 0) DZ(pc, fn, fp); return (a - a % b) / b; }
-        const bb = big(b); if (bb === 0n) DZ(pc, fn, fp); return nI(big(a) / bb);
+        const bb = big(b); if (bb === 0n) DZ(pc, fn, fp); return nU(big(a) / bb);
       },
       MOD_UL(a, b, pc, fn, fp) {
         if (typeof a === 'number' && typeof b === 'number') { if (b === 0) DZ(pc, fn, fp); return a % b; }
-        const bb = big(b); if (bb === 0n) DZ(pc, fn, fp); return nI(big(a) % bb);
+        const bb = big(b); if (bb === 0n) DZ(pc, fn, fp); return nU(big(a) % bb);
       },
-      AND_UL(a, b) { return (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a & b : nI(big(a) & big(b)); },
-      OR_UL(a, b) { return (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a | b : nI(big(a) | big(b)); },
-      XOR_UL(a, b) { return (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a ^ b : nI(big(a) ^ big(b)); },
+      AND_UL(a, b) { return (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a & b : nU(big(a) & big(b)); },
+      OR_UL(a, b) { return (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a | b : nU(big(a) | big(b)); },
+      XOR_UL(a, b) { return (typeof a === 'number' && typeof b === 'number' && a <= 0x7fffffff && b <= 0x7fffffff) ? a ^ b : nU(big(a) ^ big(b)); },
       SHL_UL(a, b) { const sh = Number(b) & 63; if (typeof a === 'number') { const v = a * Math.pow(2, sh); if (v <= SAFE) return v; } return wrapUL(big(a) << BigInt(sh)); },
-      SHR_UL(a, b) { const sh = Number(b) & 63; return typeof a === 'number' ? Math.floor(a / Math.pow(2, sh)) : nI(a >> BigInt(sh)); },
+      SHR_UL(a, b) { const sh = Number(b) & 63; return typeof a === 'number' ? Math.floor(a / Math.pow(2, sh)) : nU(a >> BigInt(sh)); },
       NEG(c, a) { return c === 2 ? (typeof a === 'number' ? -a + 0 : wrapL(-a)) : (a == 0 ? 0 : wrapUL(-big(a))); },
       BNOT(c, a) { return c === 2 ? (typeof a === 'number' ? -a - 1 : nI(~a)) : wrapUL(~big(a)); }
     };

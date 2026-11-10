@@ -32,7 +32,8 @@
   const nI = (b) => (b >= -SAFEN && b <= SAFEN) ? Number(b) : b;
   const big = (x) => typeof x === 'bigint' ? x : BigInt(x);
   const wrapL = (b) => nI(BigInt.asIntN(64, b));
-  const wrapUL = (b) => nI(BigInt.asUintN(64, b));
+  const nU = (b) => b <= SAFEN ? Number(b) : b;            // unsigned results are never negative: one compare instead of two
+  const wrapUL = (b) => nU(BigInt.asUintN(64, b));
   function ld64(dv, a, signed) {
     const lo = dv.getUint32(a, true);
     if (signed) { const hi = dv.getInt32(a + 4, true); return (hi >= -2097152 && hi < 2097152) ? hi * 4294967296 + lo : dv.getBigInt64(a, true); }
@@ -738,6 +739,6 @@
   }
 
   CC.VM = VM; CC.RunError = RunError; CC.ExitSignal = ExitSignal; CC.WAIT = WAIT;
-  CC.VMH = { conv, ld64, st64, nI, big, wrapL, wrapUL, f2i, f2u, SAFE, I32_MIN, I64_MIN, P_STACK, WAIT, ExitSignal, RunError };
+  CC.VMH = { conv, ld64, st64, nI, nU, big, wrapL, wrapUL, f2i, f2u, SAFE, I32_MIN, I64_MIN, P_STACK, WAIT, ExitSignal, RunError };
   CC.VMLIMITS = { HEAP_BYTES, STACK_BYTES, OUT_LIMIT };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

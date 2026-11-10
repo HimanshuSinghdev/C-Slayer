@@ -30,6 +30,8 @@ Compiler diagnostics mimic `gcc -Wall`: implicit declarations, format-string mis
 ## How close to real C?
 `node tests/ctestsuite.js` runs the public [c-testsuite](https://github.com/c-testsuite/c-testsuite) (it is cloned to /tmp on first use, nothing is vendored): **209 of 220 programs pass**. The 11 that do not use GNU extensions or rare corners: statement expressions `({ ... })`, `[0 ... 3]` range designators, structs passed to `...`, `&(struct S){...}` at file scope, `#line`, `#pragma push_macro`, `<wchar.h>` and calling `printf`/`fprintf` through a function pointer. Every other program is also checked against gcc output in `tests/diff.js` (220 programs).
 
+Speed: `node tests/bench_turbo.js` times 11 programs against gcc -O0 and -O2 and checks the output matches.
+
 Motion: subtle animations live in `css/motion.css` and `js/motion.js` only (opacity and transform, no layout shift, off with the OS reduce-motion setting). ⋯ menu → Animations turns them off for good; deleting those two files and their three lines in `index.html` removes the feature.
 
 `node tests/randdiff.js 200` generates random UB-free programs (`tests/gen.js`: all integer widths, arrays, structs, pointers, floats, loops, switch, calls) and compares gcc -O0/-O2 against the VM and Turbo output. About 2,000 programs so far, zero differences.
