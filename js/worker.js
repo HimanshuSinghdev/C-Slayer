@@ -4,7 +4,7 @@
  * Everything is plain data. No eval, no network.
  */
 'use strict';
-importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js', 'cc/turbo.js', 'cc/inspect.js',
+importScripts('cc/lexer.js', 'cc/preproc.js', 'cc/types.js', 'cc/parser.js', 'cc/isa.js', 'cc/vm.js', 'cc/turbo.js', 'cc/wasm.js', 'cc/inspect.js',
   'cc/headers.js', 'cc/libc.js', 'cc/cdecl.js', 'cc/cexpr.js', 'cc/cstmt.js', 'cc/cfmt.js', 'cc/compile.js', 'cc/score.js');
 
 const RUN_LIMIT_MS = 30000;     // default CPU time for an interactive run (time spent waiting for input is not counted)
@@ -97,13 +97,18 @@ async function handleRun(m, debugging) {
   // paused by *replaying*: ask for the line, then run again from the top with everything typed so far, hiding the text
   // already shown. C programs here are deterministic (time() is pinned), so the replay prints exactly the same prefix.
   if (!debugging && !m.noTurbo && CC.Turbo) {
+    // WebAssembly tier first (typed locals, real machine ints); anything it cannot prove falls back to Turbo, silently.
+    let P = null;
+    if (CC.Wasm && !m.noWasm) { try { P = CC.Wasm.analyze(c.program); } catch (e) { P = null; } }
     for (let attempt = 0; ; attempt++) {
-      if (attempt > 0) { vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs }); vm.feedInput(s.stdinAll, s.eof); }
+      if (attempt > 0 || P) { vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs, wasm: !!P }); vm.feedInput(s.stdinAll, s.eof); }
       else vm.startMs = startMs;
       skip[1] = shown[1]; skip[2] = shown[2];
       let mod = null; const t0 = performance.now();
       const flush = () => { for (const q of vm.drainOutput()) post(q.fd, q.s); };
-      try { mod = CC.Turbo.build(vm, { needInput: true, tick() { flush(); if (performance.now() - t0 > lim.timeMs) throw new CC.Turbo.TurboTimeout(); } }); } catch (e) { mod = null; }
+      const hooks = { needInput: true, tick() { flush(); if (performance.now() - t0 > lim.timeMs) throw new CC.Turbo.TurboTimeout(); } };
+      if (P) { try { mod = CC.Wasm.build(vm, P, hooks); } catch (e) { mod = null; } if (!mod) { P = null; vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs }); vm.feedInput(s.stdinAll, s.eof); } }
+      if (!mod) { try { mod = CC.Turbo.build(vm, hooks); } catch (e) { mod = null; } }
       if (!mod) break;
       status = CC.Turbo.run(vm, mod); flush();
       if (status === 'overflow') { skip[1] = shown[1]; skip[2] = shown[2]; vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs }); vm.feedInput(s.stdinAll, s.eof); status = undefined; break; }
@@ -154,8 +159,12 @@ async function runOnce(program, stdin, limitMs, heapMB) {
   let out = '', outLen = 0, errLen = 0;
   if (CC.Turbo) {      // stdin is complete, so nothing can block: Turbo is safe here
     let mod = null; const t0 = performance.now();
+    let P = null; if (CC.Wasm) { try { P = CC.Wasm.analyze(program); } catch (e) { P = null; } }
+    if (P) { vm = new CC.VM(program, { heapMB: heapMB || 64, wasm: true }); vm.feedInput(stdin, true); }
     const take = () => { for (const q of vm.drainOutput()) { if (q.fd === 1 && outLen < 400000) { out += q.s; outLen += q.s.length; } else if (q.fd === 2) errLen += q.s.length; } };
-    try { mod = CC.Turbo.build(vm, { tick() { take(); if (performance.now() - t0 > limitMs) throw new CC.Turbo.TurboTimeout(); } }); } catch (e) { mod = null; }
+    const hk = { tick() { take(); if (performance.now() - t0 > limitMs) throw new CC.Turbo.TurboTimeout(); } };
+    if (P) { try { mod = CC.Wasm.build(vm, P, hk); } catch (e) { mod = null; } if (!mod) { vm = new CC.VM(program, { heapMB: heapMB || 64 }); vm.feedInput(stdin, true); } }
+    if (!mod) { try { mod = CC.Turbo.build(vm, hk); } catch (e) { mod = null; } }
     if (mod) {
       const st = CC.Turbo.run(vm, mod); take();
       if (st !== 'overflow') return {

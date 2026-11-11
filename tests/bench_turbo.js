@@ -1,7 +1,7 @@
 // Speed table: gcc -O0 / -O2 versus the Turbo engine (what the Run button uses). Usage: node tests/bench_turbo.js [name]
 'use strict';
 const cp = require('child_process'), fs = require('fs'), load = require('./load');
-const CT = load(['lexer.js', 'preproc.js', 'types.js', 'parser.js', 'isa.js', 'vm.js', 'inspect.js', 'headers.js', 'libc.js', 'cdecl.js', 'cexpr.js', 'cstmt.js', 'cfmt.js', 'compile.js', 'turbo.js']);
+const CT = load(['lexer.js', 'preproc.js', 'types.js', 'parser.js', 'isa.js', 'vm.js', 'inspect.js', 'headers.js', 'libc.js', 'cdecl.js', 'cexpr.js', 'cstmt.js', 'cfmt.js', 'compile.js', 'turbo.js', 'wasm.js']);
 const H = '#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n';
 const P = {
   loop50m: H + 'int main(){long s=0;for(int i=0;i<50000000;i++){s+=i%7;}printf("%ld\\n",s);return 0;}',
@@ -23,7 +23,9 @@ for (const [k, src] of Object.entries(P)) {
   for (const o of ['-O0', '-O2']) { cp.spawnSync('gcc', [o, '-w', '-o', '/tmp/_b', '/tmp/_b.c']); const t = Date.now(); const r = cp.spawnSync('/tmp/_b', { maxBuffer: 1e9 }); g[o] = Date.now() - t; g.out = r.stdout.toString(); }
   let ms = 0, st = '', out = '';
   try { const c = CT.compile(src, {}); const vm = new CT.VM(c.program, {}); vm.feedInput('', true); const t = Date.now(); const m = CT.Turbo.build(vm, { tick() { for (const q of vm.drainOutput()) if (q.fd === 1) out += q.s; } }); st = CT.Turbo.run(vm, m); ms = Date.now() - t; for (const q of vm.drainOutput()) if (q.fd === 1) out += q.s; if (vm.error) st = vm.error.message.slice(0, 40); } catch (e) { st = 'ERR ' + e.message.slice(0, 40); }
-  rows.push({ k, o0: g['-O0'], o2: g['-O2'], ms, st, same: out === g.out });
+  let wms = -1, wout = '', wst = 'unsup';
+  try { const c = CT.compile(src, {}); const P2 = CT.Wasm.analyze(c.program); const vm = new CT.VM(c.program, { wasm: true }); vm.feedInput('', true); const t = Date.now(); const m = CT.Wasm.build(vm, P2, { tick() { for (const q of vm.drainOutput()) if (q.fd === 1) wout += q.s; } }); wst = CT.Turbo.run(vm, m); wms = Date.now() - t; for (const q of vm.drainOutput()) if (q.fd === 1) wout += q.s; } catch (e) { wst = 'unsup'; }
+  rows.push({ wms, wsame: wst === 'done' && wout === g.out, k, o0: g['-O0'], o2: g['-O2'], ms, st, same: out === g.out });
 }
-console.log('program    gcc-O0  gcc-O2   Turbo   x(O0)  check');
-for (const r of rows) console.log(r.k.padEnd(9), String(r.o0).padStart(6), String(r.o2).padStart(7), String(r.ms).padStart(7), ('x' + (r.ms / Math.max(r.o0, 1)).toFixed(1)).padStart(7), r.same && r.st === 'done' ? ' same output' : ' ' + (r.st === 'done' ? 'OUTPUT DIFFERS' : r.st));
+console.log('program    gcc-O0  gcc-O2   Turbo    Wasm   x(O0)  check');
+for (const r of rows) console.log(r.k.padEnd(9), String(r.o0).padStart(6), String(r.o2).padStart(7), String(r.ms).padStart(7), (r.wms < 0 ? 'n/a' : r.wms + (r.wsame ? '' : '!')).padStart(7), ('x' + (Math.min(r.ms, r.wms < 0 ? 1e9 : r.wms) / Math.max(r.o0, 1)).toFixed(1)).padStart(7), r.same && r.st === 'done' ? ' same output' : ' ' + (r.st === 'done' ? 'OUTPUT DIFFERS' : r.st));

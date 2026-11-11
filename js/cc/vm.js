@@ -116,7 +116,13 @@
         this.stackTop = this.heapEnd + this.stackBytes;
         this.size = this.stackTop;
         this.stackLimit = this.heapEnd + 4096;
-        try { buf = new ArrayBuffer(this.size); poison = new Uint8Array(this.size); break; }
+        try {
+          if (opts.wasm) {   // WebAssembly tier: program memory and its poison map live in one WebAssembly.Memory so compiled code can check accesses inline
+            this.wmem = new WebAssembly.Memory({ initial: Math.ceil((this.size * 2 + 65536) / 65536) });
+            buf = this.wmem.buffer; poison = new Uint8Array(buf, this.size, this.size);
+          } else { buf = new ArrayBuffer(this.size); poison = new Uint8Array(this.size); }
+          break;
+        }
         catch (e) { if (this.heapBytes <= 16 * 1024 * 1024) throw e; this.heapBytes = this.heapBytes >> 1; this.heapReduced = true; buf = null; }
       }
       this.u8 = new Uint8Array(buf);

@@ -647,5 +647,5 @@
     }
   }
 
-  CC.Turbo = { build, run, usesInput, Unsupported, TurboTimeout, TurboNeedInput };
+  CC.Turbo = { build, run, usesInput, Unsupported, TurboTimeout, TurboNeedInput, parts: { decode, analyze, planStructure, localAccesses, garbage, switchTable, KSIZE } };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

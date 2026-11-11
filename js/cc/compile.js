@@ -133,13 +133,14 @@
     const builtinIdx = new Map(); C.builtinList = [];
     // A program may redeclare a library function with a narrower return type (int strlen(char*)): like real C on a 64-bit machine,
     // the caller then sees only the low bits of the result.
+    const retCls = (r) => !r ? '' : r.k === 'int' ? (r.size === 8 ? (r.signed ? 'L' : 'UL') : (r.signed ? 'I' : 'U')) : r.k === 'ptr' ? 'U' : r.k === 'float' ? (r.size === 4 ? 'F' : 'D') : '';
     const useBuiltin = (name, ret) => {
       const narrow = ret && ret.k === 'int' && ret.size <= 4 ? (ret.signed ? 's' : 'u') + ret.size : '';
       const key = name + narrow;
       let i = builtinIdx.get(key);
       if (i === undefined) {
         i = C.builtinList.length; const b = libc.table.get(name);
-        C.builtinList.push(narrow ? { name: b.name, fn: (vm, a) => { const r = b.fn(vm, a); return typeof r === 'bigint' ? Number(narrow[0] === 's' ? BigInt.asIntN(+narrow.slice(1) * 8, r) : BigInt.asUintN(+narrow.slice(1) * 8, r)) : r; } } : b);
+        C.builtinList.push(narrow ? { name: b.name, ret: retCls(ret), fn: (vm, a) => { const r = b.fn(vm, a); return typeof r === 'bigint' ? Number(narrow[0] === 's' ? BigInt.asIntN(+narrow.slice(1) * 8, r) : BigInt.asUintN(+narrow.slice(1) * 8, r)) : r; } } : Object.assign({}, b, { ret: retCls(ret) }));
         builtinIdx.set(key, i);
       }
       return i;
