@@ -32,7 +32,7 @@ Compiler diagnostics mimic `gcc -Wall`: implicit declarations, format-string mis
 
 Speed: `node tests/bench_turbo.js` times 11 programs against gcc -O0 and -O2 (Turbo and WebAssembly columns) and checks the output matches.
 
-WebAssembly tier (`js/cc/wasm.js`): when it can prove every value's machine type it compiles the bytecode to real wasm (typed locals, native 64-bit ints, one shared memory with the poison map). Anything it can't prove (indirect calls, bit-fields, odd coercions) falls back to Turbo, then to the VM, silently. `node tests/wasm_diff.js` compares it with the VM on the corpus (204 of 220 compile, 0 differences); `randdiff` checks it against gcc too. To turn it off, remove `'cc/wasm.js'` from `js/worker.js`'s importScripts.
+WebAssembly tier (`js/cc/wasm.js`): when it can prove every value's machine type it compiles the bytecode to real wasm (typed locals, native 64-bit ints, one shared memory with the poison map). Anything it can't prove (indirect calls, bit-fields, odd coercions) falls back to Turbo, then to the VM, silently. `node tests/wasm_diff.js` compares it with the VM on the corpus (204 of 220 compile, 0 differences); `randdiff` checks it against gcc too. The worker picks it per program (recursion-heavy 32-bit code stays on Turbo). To turn it off, remove `'cc/wasm.js'` from `js/worker.js`'s importScripts.
 
 Motion: subtle animations live in `css/motion.css` and `js/motion.js` only (opacity and transform, no layout shift, off with the OS reduce-motion setting). ⋯ menu → Animations turns them off for good; deleting those two files and their three lines in `index.html` removes the feature.
 

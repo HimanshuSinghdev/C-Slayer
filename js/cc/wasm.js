@@ -207,6 +207,14 @@
     // every value that needs a signed/unsigned/float decision must have one
     for (const f of P.fns) f.irec.forEach((r, i) => { if (r) for (const k of ['a', 'b']) if (r[k] !== undefined && V.req[V.find(r[k])]) { const c = V.cls(r[k]), nm = CC.OPNAMES[f.D.ins[i].op]; if (!c) un('unresolved class @' + nm); if (c === 'X') un('ambiguous signedness @' + nm); } });
     P.V = V; P.sites = sites;
+    // Heuristic for the worker: call-heavy recursion with only 32-bit work runs a little faster as plain JS (V8 inlines it);
+    // 64-bit integers and doubles are where WebAssembly wins big.
+    let wide = false; const calls = new Map();
+    for (const f of P.fns) { const out = new Set(); f.irec.forEach((r) => { if (!r) return; if (OPCLS[r.op] && /^(L|UL|D|F)$/.test(OPCLS[r.op].c)) wide = true; if (r.callee) out.add(r.callee.id); }); calls.set(f.id, out); }
+    const seen = new Map(); let rec = false;
+    const dfs = (id) => { seen.set(id, 1); for (const t of calls.get(id) || []) { if (seen.get(t) === 1) rec = true; else if (!seen.has(t)) dfs(t); } seen.set(id, 2); };
+    for (const f of P.fns) if (!seen.has(f.id)) dfs(f.id);
+    P.preferTurbo = rec && !wide;
     return P;
   }
 
@@ -366,6 +374,13 @@
           const { nm, c } = OPCLS[op], x = d - 2, y = d - 1, t = TYOF[c];
           if ((nm === 'DIV' || nm === 'MOD') && (c === 'I' || c === 'U' || c === 'L' || c === 'UL')) {
             const w = t === 'i64', sg = c === 'I' || c === 'L';
+            // a constant divisor other than 0 and -1 can never trap
+            const kc = V.cst[V.find(r.b)], kv = kc && !(kc.list && kc.list.length) && kc.v !== undefined ? Number(kc.v) : null;
+            if (kv !== null && kv !== 0 && kv !== -1 && Math.abs(kv) < 2 ** 31) {
+              sget(x, r.a, r, 'a'); sget(y, r.b, r, 'b');
+              e(w ? (nm === 'DIV' ? (sg ? 0x7f : 0x80) : (sg ? 0x81 : 0x82)) : (nm === 'DIV' ? (sg ? 0x6d : 0x6e) : (sg ? 0x6f : 0x70)));
+              sset(x, r.res); continue;
+            }
             // trap like the VM: division by zero (and INT_MIN / -1 for signed)
             sget(y, r.b, r, 'b'); e(w ? 0x50 : 0x45);
             if (sg) { sget(y, r.b, r, 'b'); if (w) e(0x42, sleb(-1n), 0x51); else { i32c(-1); e(0x46); } sget(x, r.a, r, 'a'); if (w) e(0x42, sleb(-(1n << 63n)), 0x51); else { i32c(-2147483648); e(0x46); } e(0x71, 0x72); }

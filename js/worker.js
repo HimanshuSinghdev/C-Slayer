@@ -99,7 +99,7 @@ async function handleRun(m, debugging) {
   if (!debugging && !m.noTurbo && CC.Turbo) {
     // WebAssembly tier first (typed locals, real machine ints); anything it cannot prove falls back to Turbo, silently.
     let P = null;
-    if (CC.Wasm && !m.noWasm) { try { P = CC.Wasm.analyze(c.program); } catch (e) { P = null; } }
+    if (CC.Wasm && !m.noWasm) { try { P = CC.Wasm.analyze(c.program); if (P.preferTurbo) P = null; } catch (e) { P = null; } }
     for (let attempt = 0; ; attempt++) {
       if (attempt > 0 || P) { vm = s.vm = new CC.VM(c.program, { heapMB: lim.heapMB, startMs, wasm: !!P }); vm.feedInput(s.stdinAll, s.eof); }
       else vm.startMs = startMs;
@@ -159,7 +159,7 @@ async function runOnce(program, stdin, limitMs, heapMB) {
   let out = '', outLen = 0, errLen = 0;
   if (CC.Turbo) {      // stdin is complete, so nothing can block: Turbo is safe here
     let mod = null; const t0 = performance.now();
-    let P = null; if (CC.Wasm) { try { P = CC.Wasm.analyze(program); } catch (e) { P = null; } }
+    let P = null; if (CC.Wasm) { try { P = CC.Wasm.analyze(program); if (P.preferTurbo) P = null; } catch (e) { P = null; } }
     if (P) { vm = new CC.VM(program, { heapMB: heapMB || 64, wasm: true }); vm.feedInput(stdin, true); }
     const take = () => { for (const q of vm.drainOutput()) { if (q.fd === 1 && outLen < 400000) { out += q.s; outLen += q.s.length; } else if (q.fd === 2) errLen += q.s.length; } };
     const hk = { tick() { take(); if (performance.now() - t0 > limitMs) throw new CC.Turbo.TurboTimeout(); } };
