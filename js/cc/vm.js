@@ -293,20 +293,26 @@
     malloc(n, line) {
       if (n < 0 || n > this.heapBytes) return 0;
       const rs = Math.max(16, (n + 15) & ~15);
-      let addr = 0;
+      let addr = 0, fresh = false;
       const fl = this.freeLists.get(rs);
       if (fl && fl.length) addr = fl.pop();
       else {
         if (this.brk + rs + 32 > this.heapEnd) { this.drainQuarantine(true); const f2 = this.freeLists.get(rs); if (f2 && f2.length) addr = f2.pop(); }
         if (!addr) {
           if (this.brk + rs + 32 > this.heapEnd) return 0;
-          addr = this.brk + 0; this.brk += rs + 32; addr += 16;
+          addr = this.brk + 0; this.brk += rs + 32; addr += 16; fresh = true;
         }
       }
-      this.poison.fill(P_HEAP, addr - 16, addr);
-      this.poison.fill(0, addr, addr + n);
-      this.poison.fill(P_HEAP, addr + n, addr + rs + 16);
-      this.u8.fill(0xCD, addr, addr + n);
+      const po = this.poison, u8 = this.u8;
+      if (fresh) {      // never-used heap is already all redzone, so only the user bytes change
+        if (n < 48) { for (let i = addr, e = addr + n; i < e; i++) { po[i] = 0; u8[i] = 0xCD; } }
+        else { po.fill(0, addr, addr + n); u8.fill(0xCD, addr, addr + n); }
+      } else {
+        po.fill(P_HEAP, addr - 16, addr);
+        po.fill(0, addr, addr + n);
+        po.fill(P_HEAP, addr + n, addr + rs + 16);
+        u8.fill(0xCD, addr, addr + n);
+      }
       this.blocks.set(addr, { addr, size: n, rs, line: line || 0, state: 1 });
       this.heapInUse += n; this.stats.allocs++; this.stats.bytesAllocated += n;
       return addr;
