@@ -19,7 +19,7 @@
   const P_HEAP = 1, P_FREED = 2, P_STACK = 3, P_GLOBAL = 4;
   const HEAP_BYTES = 64 * 1024 * 1024;     // defaults; override with VM opts heapMB / stackMB / maxFrames
   const STACK_BYTES = 8 * 1024 * 1024;     // same as the Linux default
-  const OUT_LIMIT = 4 * 1024 * 1024;
+  const OUT_LIMIT = 64 * 1024 * 1024;
   const MAX_FRAMES = 400000;
   const OPSTACK = 1 << 16;
   const QUARANTINE = 4 * 1024 * 1024;
