@@ -320,6 +320,19 @@ unsigned int sleep(unsigned int seconds);
 int usleep(unsigned int usec);
 #endif`;
 
+  H['conio.h'] = `
+#ifndef _CONIO_H
+#define _CONIO_H
+int getch(void);
+int getche(void);
+int kbhit(void);
+void clrscr(void);
+void gotoxy(int x, int y);
+void textcolor(int c);
+void textbackground(int c);
+void delay(unsigned int ms);
+#endif`;
+
   // math.h is generated from the table in libc.js
   CC.headerTexts = H;
 

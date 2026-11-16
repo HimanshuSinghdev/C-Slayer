@@ -444,6 +444,10 @@
     if (b === -1) { vm.stdinAtEof = true; return -1; }
     s.commit(1); return b;
   });
+  // conio.h (Turbo C era): there is no raw keyboard here, so getch/getche read the next character like getchar
+  def('getch', (vm) => { const s = stdinSource(vm); const b = s.peek(0); if (b === -2) return WAIT; if (b === -1) { vm.stdinAtEof = true; return -1; } s.commit(1); return b; });
+  def('getche', (vm) => { const s = stdinSource(vm); const b = s.peek(0); if (b === -2) return WAIT; if (b === -1) { vm.stdinAtEof = true; return -1; } s.commit(1); return b; });
+  def('kbhit', () => 0); def('clrscr', () => 0); def('gotoxy', () => 0); def('textcolor', () => 0); def('textbackground', () => 0); def('delay', () => 0);
   const fgetcImpl = (vm, a) => {
     const so = srcForFile(vm, num(a[0])); if (!so) return -1;
     const b = so.src.peek(0);
