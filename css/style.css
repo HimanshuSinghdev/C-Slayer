@@ -50,7 +50,8 @@ body[data-state=ok]::before{opacity:1;background:var(--ok);animation:fade 1.6s f
 .logo text{font-family:var(--sans);font-weight:800;font-size:19px;fill:var(--tx)}
 .wordbox{display:flex;flex-direction:column;line-height:1}
 .word{font-weight:800;font-size:19px;letter-spacing:-.01em}
-.by{font-family:var(--pen);font-size:19px;color:var(--ember);margin-top:-1px;transform:rotate(-2deg);transform-origin:left;white-space:nowrap}
+.by{position:relative;font-family:var(--pen);font-size:20px;color:var(--ember);margin-top:-1px;padding-bottom:4px;transform:rotate(-2deg);transform-origin:left;white-space:nowrap}
+.by::after{content:"";position:absolute;left:0;right:6%;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--ember) 70%,transparent);opacity:.7}
 .actions{display:flex;gap:6px;align-items:center}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--tx);background:var(--panel2);color:var(--tx);border-radius:6px;padding:8px 11px;font-weight:600;font-size:14px;cursor:pointer;min-height:42px;box-shadow:0 2px 0 var(--tx);transition:transform .08s,box-shadow .08s}
 .btn:active{transform:translateY(2px);box-shadow:0 0 0 var(--tx)}

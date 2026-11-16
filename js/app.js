@@ -522,6 +522,8 @@
   document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   // Auto-update: look for a new version whenever the app is opened or comes back to the front; when one takes over, reload
   // into it (never in the middle of a run; the code is already saved to this device).
+  // warm the compiler worker once the page has painted, so the first Run does not wait for it to download
+  setTimeout(() => { try { ensureWorker(); } catch (e) {} }, 400);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     const had = !!navigator.serviceWorker.controller;
     let reloaded = false;
