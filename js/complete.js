@@ -26,6 +26,10 @@
     ['switch', 'switch', 'switch (|) {\n    case 0:\n        break;\n    default:\n        break;\n}'],
     ['struct', 'struct definition', 'typedef struct {\n    |\n} Name;'],
     ['func', 'function', 'int name(int a) {\n    |\n    return 0;\n}'],
+    ['return', 'return 0;', 'return 0;'],
+    ['break', 'break;', 'break;'],
+    ['continue', 'continue;', 'continue;'],
+    ['else', 'else { … }', 'else {\n    |\n}'],
     ['inc', '#include <stdio.h>', '#include <|>'],
     ['array', 'int array[n]', 'int arr[|];'],
     ['readint', 'read an int', 'int n;\nif (scanf("%d", &n) != 1) {\n    |return 1;\n}'],
@@ -87,8 +91,14 @@
     const list = [], used = new Set();
     const add = (it, key) => { if (!used.has(key) && list.length < 9) { used.add(key); list.push(it); } };
     // statements (for, if, main …) only where a statement can start; inside an expression only functions make sense
-    const lead = w.before.trim(), stmtStart = lead === '' || lead === 'else' || /[;{}]$/.test(lead);
+    const lead = w.before.trim();
+    let depth = 0; for (const c of lead) { if (c === '(') depth++; else if (c === ')') depth--; }
+    // a statement can start after ; { } or a label, after else/do, after the ")" of an if/while/for header, or at the start of a line;
+    // never inside an open "(" (for (int i = 0; ← still the loop header)
+    const stmtStart = depth <= 0 && (lead === '' || lead === 'else' || lead === 'do' || /[;{}:]$/.test(lead) || (lead.endsWith(')') && /^(\}\s*)?(else\s+)?(if|while|for|switch)\b/.test(lead)));
     const fix = (t) => stmtStart ? t : t.replace(/^FILE \*fp = /, '').replace(/;$/, '');
+    // "int ma" → the rest of a main function, without a second "int"
+    if (lead === 'int' && 'main'.indexOf(lw) === 0 && lw.length >= 2) add(snippetItem('main', 'int main(void) { … }', 'main(void) {\n    |\n    return 0;\n}', 'hint-snip'), 'main');
     if (stmtStart) for (const [n, d, t] of SNIPPETS) if (n.indexOf(lw) === 0 && (lead !== 'else' || n === 'if')) add(snippetItem(n, d, t, 'hint-snip'), n);
     for (const [n, d, t] of FUNCS) if (n.indexOf(lw) === 0) add(snippetItem(n, d, fix(t), 'hint-fn'), n);
     for (const k of KEYWORDS) if (k.indexOf(lw) === 0 && k !== w.word) add({ text: k, displayText: k, className: 'hint-kw' }, k);
