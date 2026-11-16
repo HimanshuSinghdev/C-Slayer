@@ -166,7 +166,9 @@ li.CodeMirror-hint-active span,li.CodeMirror-hint-active b{color:var(--ink-on)}
 .part li b{color:var(--tx);font-family:var(--mono);font-weight:400}
 .part.tips{border:1.5px solid var(--ember);border-radius:6px;padding:9px 12px;margin-bottom:6px;background:var(--panel2)}
 .part.tips .hd{color:var(--ember)}.part.tips .hd::after{display:none}.part.tips li b{color:var(--ember)}
-.credit{margin-top:14px;text-align:center;color:var(--dim);font-size:13px}.credit b{font-family:var(--pen);font-size:21px;font-weight:400;color:var(--ember)}
+.credit{margin:22px auto 6px;text-align:center;color:var(--dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+.credit b{display:block;position:relative;width:max-content;margin:2px auto 0;padding-bottom:7px;font-family:var(--pen);font-size:28px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ember);transform:rotate(-2deg)}
+.credit b::after{content:"";position:absolute;left:4%;right:4%;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--ember) 18%,var(--ember) 82%,transparent);opacity:.7}
 
 /* ---------- debugger ---------- */
 .dbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}

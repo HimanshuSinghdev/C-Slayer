@@ -438,7 +438,7 @@
     ensureWorker().postMessage({ type: 'score', id: runId, src: cm.getValue(), stdin: stdinText, limits, files: otherFiles(), tests: tests.map(t => ({ name: t.name, input: t.input, expected: t.expected })) });
   };
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function creditEl() { const c = el('p', 'credit', 'Graded by C·Slayer · built by '); c.appendChild(el('b', '', 'Himanshu Singh')); return c; }
+  function creditEl() { const c = el('p', 'credit', 'Graded by C·Slayer — designed & built by '); c.appendChild(el('b', '', 'Himanshu Singh')); return c; }
   function onScore(m) {
     if (m.id !== scoreId) return;
     $('#btnScore').disabled = false;
