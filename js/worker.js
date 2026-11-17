@@ -168,7 +168,7 @@ async function runOnce(program, stdin, limitMs, heapMB) {
     if (mod) {
       const st = CC.Turbo.run(vm, mod); take();
       if (st !== 'overflow') return {
-        out, status: st, exit: st === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin,
+        out, status: st, exit: st === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin, eof: !!vm.stdinAtEof,
         runError: st === 'error' ? plainErr(vm.error, null) : st === 'timeout' ? { kind: 'timeout', message: 'timeout', line: 0 } : null,
         leaks: st === 'done' ? plainLeaks(vm) : []
       };
@@ -179,7 +179,7 @@ async function runOnce(program, stdin, limitMs, heapMB) {
   const s = { vm, stopped: false, spent: 0 };
   const status = await drive(s, limitMs, (fd, str) => { if (fd === 1 && outLen < 400000) { out += str; outLen += str.length; } else if (fd === 2) errLen += str.length; }, null);
   return {
-    out, status, exit: status === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin,
+    out, status, exit: status === 'done' ? vm.exitCode : null, hadStderr: errLen > 0, noInput: !stdin, eof: !!vm.stdinAtEof,
     runError: status === 'error' ? plainErr(vm.error, null) : status === 'timeout' ? { kind: 'timeout', message: 'timeout', line: 0 } : null,
     leaks: status === 'done' ? plainLeaks(vm) : []
   };
@@ -215,7 +215,7 @@ async function handleScore(m) {
       probes.push({ id: q.id, in: q.in, big: !!q.big, out: r.out.slice(0, 400), exit: r.exit, runError: r.runError });
     }
   }
-  const result = CC.score({ compile: c, probes, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput } : null, tests: tests.length ? tests : null });
+  const result = CC.score({ compile: c, probes, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput, eof: run.eof } : null, tests: tests.length ? tests : null });
   postMessage({ type: 'score-result', id, ok: c.ok, errors: plainErrors(c.errors), result, tests, run: run ? { out: run.out.slice(0, 4000), exit: run.exit, error: run.runError } : null });
 }
 

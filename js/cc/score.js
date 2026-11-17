@@ -105,7 +105,12 @@
 
     // ---------------- runtime health (3) ----------------
     const rt = part('runtime', 'Runs without crashing', 3);
+    // a menu / read loop that keeps spinning after the input ran out is a missing EOF check, not a runaway algorithm
+    const eofLoop = !!(rr && rr.runError && rr.eof && /^(timeout|step-limit|output-limit)$/.test(rr.runError.kind || '') );
     if (!rr) { good(rt, 'Program was not run.'); }
+    else if (eofLoop) {
+      dock(rt, 0.5, 'The loop kept running after the input ran out (scanf returned EOF). Check the return value of scanf, e.g. if (scanf(...) != 1) break; — or type the inputs in the Standard input box.', rr.runError.line || 0);
+    }
     else if (rr.runError) {
       const k = rr.runError.kind || '';
       const m = rr.runError.message || k;
@@ -135,7 +140,7 @@
       for (const t of tests.filter(t => !t.pass).slice(0, 4)) tp.notes.push({ text: 'Failed: ' + (t.name || 'test') + (t.reason ? ' — ' + t.reason : ''), line: 0, delta: 0 });
     } else {
       // without a reference we can only reward a clean run
-      tp.got = rr && !rr.runError && (rr.exit === 0 || rr.exit == null) ? 2.0 : rr && rr.noInput && rr.hadStderr && !rr.runError ? 1.5 : rr ? 0.5 : 1.5;
+      tp.got = eofLoop ? 2.0 : rr && !rr.runError && (rr.exit === 0 || rr.exit == null) ? 2.5 : rr && rr.noInput && rr.hadStderr && !rr.runError ? 1.5 : rr ? 0.5 : 1.5;
       if (warns.some(w => /format '%.*expects/.test(w.msg) || /used uninitialized/.test(w.msg))) { tp.got = Math.max(0, tp.got - 1.0); tp.notes.push({ text: 'A warning (wrong printf/scanf type or uninitialized variable) means the output is probably wrong.', line: 0, delta: -1.0 }); }
       const pr = probes && rr && !rr.runError ? probes : null;
       if (pr) {
@@ -151,7 +156,7 @@
         else tp.got = Math.min(tp.got, 0.5);
         for (const n of capNotes) tp.notes.push(n);
       }
-      good(tp, 'No test cases were provided, so correctness is estimated from a clean run only. Add test cases for a precise grade.');
+      tp.notes.push({ text: 'No test cases were given, so correctness could not be checked and no marks were taken off for it. Add test cases for a precise grade.', line: 0, delta: 0 });
     }
     parts.push(tp);
 
@@ -273,7 +278,7 @@
     let total = parts.reduce((a, p) => a + p.got, 0);
     for (const p of parts) p.got = round1(p.got);
     // a program that crashes cannot score as "excellent"
-    if (rr && rr.runError) total = Math.min(total, 6);
+    if (rr && rr.runError && !eofLoop) total = Math.min(total, 6);
     total = Math.min(total, ceiling);
     let score = Math.round(total * 2) / 2;
     score = clamp(score, 1, 10);
@@ -292,6 +297,6 @@
     const lost = parts.map(p => ({ p, d: p.max - p.got })).filter(x => x.d > 0.05).sort((a, b) => b.d - a.d);
     if (!lost.length) return 'Clean build, clean run, tidy code. Nothing to improve.';
     const top = lost.slice(0, 2).map(x => x.p.name.toLowerCase()).join(' and ');
-    return 'Biggest gains available in: ' + top + '.' + (rr && rr.runError ? ' A crashing program is capped at 6.' : '');
+    return 'Biggest gains available in: ' + top + '.' + (rr && rr.runError && !rr.eof ? ' A crashing program is capped at 6.' : '');
   }
 })(typeof globalThis !== 'undefined' ? globalThis : self);
