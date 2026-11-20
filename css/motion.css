@@ -84,5 +84,24 @@
   html.fx-lite .grade.fx-go path { animation: none; stroke-dashoffset: 0; }
   html.fx-lite .grade.fx-go .num { animation-duration: 1ms; animation-delay: 0s; }
   html.fx-lite body[data-state=running] #btnStop::after { animation: none; }
+  /* signature: each letter is wiped in left to right like a pen stroke, held, then fades in the same order; the underline draws with it */
+  html.fx .ink { display: inline-block; animation: ink-write 7s linear infinite backwards; animation-delay: calc(var(--i) * 0.13s); will-change: clip-path, opacity; }
+  html.fx .by, html.fx .credit b { --cyc: 7s; }
+  html.fx .by::after, html.fx .credit b::after { transform-origin: left; animation: ink-line 7s linear infinite; }
+  @keyframes ink-write {
+    0%   { clip-path: inset(-20% 100% -20% 0); opacity: 1; }
+    7%   { clip-path: inset(-20% 0 -20% 0); }
+    78%  { clip-path: inset(-20% 0 -20% 0); opacity: 1; }
+    92%  { clip-path: inset(-20% 0 -20% 0); opacity: 0; }
+    100% { clip-path: inset(-20% 100% -20% 0); opacity: 0; }
+  }
+  @keyframes ink-line {
+    0%   { transform: scaleX(0); opacity: .7; }
+    28%  { transform: scaleX(1); }
+    78%  { transform: scaleX(1); opacity: .7; }
+    92%  { transform: scaleX(1); opacity: 0; }
+    100% { transform: scaleX(0); opacity: 0; }
+  }
+  html.fx-lite .ink, html.fx-lite .by::after, html.fx-lite .credit b::after { animation: none; }
   html.fx-lite .out > .fx-in, html.fx-lite .tres { animation: none; }
 }

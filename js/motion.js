@@ -70,5 +70,21 @@
 
   var btn = document.getElementById('btnFx');
   if (btn) btn.addEventListener('click', function () { if (osReduced) return; on = !on; write(on); if (on) { root.classList.remove('fx-lite'); jank = 0; try { localStorage.removeItem('cs.fxlite'); } catch (e) { /* storage unavailable */ } } apply(); });
+  // ---- the signature writes itself, letter by letter, then fades and starts again (CSS does the loop) ----
+  function inkify(el) {
+    if (!el || el.getAttribute('data-ink')) return;
+    var txt = el.textContent; if (!txt) return;
+    el.setAttribute('data-ink', '1'); el.setAttribute('aria-label', txt.trim()); el.textContent = '';
+    var i = 0;
+    txt.split('').forEach(function (ch) {
+      if (ch === ' ') { el.appendChild(document.createTextNode(' ')); return; }
+      var sp = document.createElement('span'); sp.className = 'ink'; sp.setAttribute('aria-hidden', 'true'); sp.style.setProperty('--i', i++); sp.textContent = ch; el.appendChild(sp);
+    });
+    el.style.setProperty('--n', i);
+  }
+  function inkAll() { document.querySelectorAll('.by, .credit b').forEach(inkify); }
+  inkAll();
+  new MutationObserver(function (list) { for (var k = 0; k < list.length; k++) if (list[k].addedNodes.length) { inkAll(); return; } }).observe(document.body, { childList: true, subtree: true });
+
   apply();
 })();
