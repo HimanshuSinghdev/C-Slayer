@@ -136,9 +136,23 @@ async function handleRun(m, debugging) {
   let err = status === 'error' ? plainErr(vm.error, c.fileTable) : status === 'timeout' ? { kind: 'timeout', message: 'Stopped after ' + (lim.timeMs / 1000) + ' seconds of running — probably an infinite loop. (You can raise the time limit in the Tests tab.)', line: vm.where ? vm.where().line | 0 : 0 } : null;
   postMessage({
     type: 'end', id, compiled: true, status, exit: status === 'done' ? vm.exitCode : null, error: err,
-    leaks: status === 'done' ? plainLeaks(vm) : [], steps: vm.stepCount | 0
+    leaks: status === 'done' ? plainLeaks(vm) : [], steps: vm.stepCount | 0,
+    ovf: status === 'done' && !debugging && Date.now() - startMs < 2500 ? probeOverflow(c.program, s.stdinAll, lim.heapMB) : 0
   });
   session = null;
+}
+
+// Teaching aid: replay a finished program in the plain VM and report the first signed int overflow (gcc stays silent about it)
+function probeOverflow(program, stdin, heapMB) {
+  try {
+    const vm = new CC.VM(program, { heapMB: heapMB || 64, watchOverflow: true }); vm.feedInput(stdin || '', true);
+    const t0 = performance.now();
+    for (;;) {
+      const st = vm.run(200000); vm.drainOutput();
+      if (st === 'done' || st === 'error' || vm.ovfLine || performance.now() - t0 > 1500) break;
+    }
+    return vm.ovfLine || 0;
+  } catch (e) { return 0; }
 }
 
 function handleStdin(m) {
@@ -195,6 +209,7 @@ async function handleScore(m) {
   const lim = limitsOf(m);
   if (c.ok) {
     run = await runOnce(c.program, String(m.stdin || '').slice(0, MAX_TEST_TEXT), Math.max(SCORE_RUN_MS, Math.min(lim.timeMs, 60000)), lim.heapMB);
+    if (run && !run.runError) run.ovf = probeOverflow(c.program, String(m.stdin || '').slice(0, MAX_TEST_TEXT), lim.heapMB);
     const list = Array.isArray(m.tests) ? m.tests.slice(0, MAX_TESTS) : [];
     for (let i = 0; i < list.length; i++) {
       const t = list[i] || {};
@@ -215,7 +230,7 @@ async function handleScore(m) {
       probes.push({ id: q.id, in: q.in, big: !!q.big, out: r.out.slice(0, 400), exit: r.exit, runError: r.runError });
     }
   }
-  const result = CC.score({ compile: c, probes, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput, eof: run.eof } : null, tests: tests.length ? tests : null });
+  const result = CC.score({ compile: c, probes, run: run ? { runError: run.runError, exit: run.exit, leaks: run.leaks, hadStderr: run.hadStderr, noInput: run.noInput, eof: run.eof, ovf: run.ovf } : null, tests: tests.length ? tests : null });
   postMessage({ type: 'score-result', id, ok: c.ok, errors: plainErrors(c.errors), result, tests, run: run ? { out: run.out.slice(0, 4000), exit: run.exit, error: run.runError } : null });
 }
 

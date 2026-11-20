@@ -159,6 +159,7 @@
       this.warnings = [];
       // start: argv setup is done by the compiled startup stub, which calls main
       this.pc = prog.startPc;
+      this.watchOvf = !!opts.watchOverflow; this.ovfLine = 0;     // optional: remember the first signed int overflow (a teaching aid, off by default)
     }
 
     // ---------- errors ----------
@@ -443,6 +444,7 @@
       let pc = this.pc, ssp = this.ssp, fp = this.fp, sp = this.sp;
       const frames = this.frames;
       let a, b, v;
+      const wo = this.watchOvf;
       const save = () => { this.pc = pc; this.ssp = ssp; this.fp = fp; this.sp = sp; };
       const self = this;
       // fast inline access checks
@@ -532,9 +534,9 @@
           }
 
           // ---- int32 ----
-          case 13 /*ADD_I*/: ssp--; S[ssp - 1] = (S[ssp - 1] + S[ssp]) | 0; break;
-          case 14 /*SUB_I*/: ssp--; S[ssp - 1] = (S[ssp - 1] - S[ssp]) | 0; break;
-          case 15 /*MUL_I*/: ssp--; S[ssp - 1] = Math.imul(S[ssp - 1], S[ssp]); break;
+          case 13 /*ADD_I*/: ssp--; if (wo) { v = S[ssp - 1] + S[ssp]; if ((v > 2147483647 || v < -2147483648) && !this.ovfLine) this.ovfLine = this.lineAt(pc - 1); } S[ssp - 1] = (S[ssp - 1] + S[ssp]) | 0; break;
+          case 14 /*SUB_I*/: ssp--; if (wo) { v = S[ssp - 1] - S[ssp]; if ((v > 2147483647 || v < -2147483648) && !this.ovfLine) this.ovfLine = this.lineAt(pc - 1); } S[ssp - 1] = (S[ssp - 1] - S[ssp]) | 0; break;
+          case 15 /*MUL_I*/: ssp--; if (wo) { v = S[ssp - 1] * S[ssp]; if ((v > 2147483647 || v < -2147483648) && !this.ovfLine) this.ovfLine = this.lineAt(pc - 1); } S[ssp - 1] = Math.imul(S[ssp - 1], S[ssp]); break;
           case 16 /*DIV_I*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0 || (b === -1 && a === I32_MIN)) { save(); divz(); } S[ssp - 1] = (a / b) | 0; break;
           case 17 /*MOD_I*/: ssp--; b = S[ssp]; a = S[ssp - 1]; if (b === 0 || (b === -1 && a === I32_MIN)) { save(); divz(); } S[ssp - 1] = (a % b) | 0; break;
           case 18 /*AND_I*/: ssp--; S[ssp - 1] = S[ssp - 1] & S[ssp]; break;

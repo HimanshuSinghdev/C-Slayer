@@ -173,6 +173,7 @@
     const sl = A.sl;
     const flagged = new Set();
     const once = (key, delta, text, line) => { if (flagged.has(key)) return; flagged.add(key); dock(sp, delta, text, line); };
+    if (rr && rr.ovf) once('ovf', 0.3, 'int arithmetic overflowed here (more than 2,147,483,647). In C that gives wrong, often negative, numbers; use long long (and %lld) for big values.', rr.ovf);
     sl.forEach((ln, idx) => {
       const L = idx + 1;
       if (/\b(strcpy|strcat|sprintf|vsprintf)\s*\(/.test(ln)) once('unbounded', 0.3, 'strcpy/strcat/sprintf do not check the destination size; prefer strncpy/snprintf with a length.', L);

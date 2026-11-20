@@ -388,8 +388,9 @@
       if (rx) { put('\nWhat happened: ' + rx.why + '\n', 'u'); put('How to fix: ' + rx.fix + '\n', 'u'); }
       return;
     }
+    if (m.ovf) { put(nl + '⚠ line ' + m.ovf + ': an int calculation went past 2,147,483,647 — in C that wraps around to wrong (often negative) numbers. Use long long and %lld for big values.\n', 'e'); markLines([{ line: m.ovf, sev: 'warning' }]); }
     setState(m.exit === 0 ? 'ok' : 'error');
-    put(nl + '[program exited with status ' + m.exit + ']\n', m.exit === 0 ? 'g' : 'e');
+    put((m.ovf ? '' : nl) + '[program exited with status ' + m.exit + ']\n', m.exit === 0 ? 'g' : 'e');
     if (m.leaks && m.leaks.length) put('⚠ ' + m.leaks.length + ' memory block' + (m.leaks.length > 1 ? 's' : '') + ' never freed' + (m.leaks[0].line ? ' (first allocated on line ' + m.leaks[0].line + ')' : '') + '.\n', 'u');
   }
   // stdin line
