@@ -193,11 +193,15 @@
       if ((lab === 'I' || lab === 'U') && (q.c === 'L' || q.c === 'UL')) { q.r['co' + q.key] = lab === 'U' ? 0xad : 0xac; continue; }
       un('class conflict ' + lab + '/' + q.c);
     }
+    // a constant that does not fit in 32 bits must stay 64-bit when it meets a narrower value (it would silently wrap otherwise)
+    const pin = (v) => { if (!V.lab[V.find(v)]) { const c = V.cls(v); if (c === 'L' || c === 'UL') V.label(v, c); } };
     for (const q of pp) {
+      pin(q.a); pin(q.p);
       const la = V.lab[V.find(q.a)], lb = V.lab[V.find(q.p)];
       if ((la === 'I' || la === 'U') && (lb === 'L' || lb === 'UL')) q.r['co' + q.key] = la === 'U' ? 0xad : 0xac; else { try { V.unify(q.a, q.p); } catch (err) { err.message += ' @pp:' + CC.OPNAMES[q.r.op] + '.' + q.key; throw err; } }
     }
     for (const q of pairs) {
+      pin(q.a); pin(q.b);
       const la = V.lab[V.find(q.a)], lb = V.lab[V.find(q.b)], nar = (l) => l === 'I' || l === 'U', wid = (l) => l === 'L' || l === 'UL';
       if (nar(la) && wid(lb)) { q.r.coa = la === 'U' ? 0xad : 0xac; q.r.cmpv = q.b; }
       else if (wid(la) && nar(lb)) { q.r.cob = lb === 'U' ? 0xad : 0xac; q.r.cmpv = q.a; }
