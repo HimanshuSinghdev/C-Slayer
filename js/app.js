@@ -310,6 +310,23 @@
 
   // ---------------- problems ----------------
   let lastErrors = null;
+  // ---- Explain line: a card above the symbol keys that explains the line under the cursor, following it as you move ----
+  let exOn = LS.get('cs.explain', false), exT = 0;
+  const exCard = document.createElement('div'); exCard.className = 'lcard'; exCard.hidden = true; exCard.setAttribute('aria-live', 'polite');
+  exCard.innerHTML = '<b></b><span></span><button type="button" aria-label="Close">×</button>';
+  $('#keys').parentNode.insertBefore(exCard, $('#keys'));
+  function exLabel() { const l = $('#exLbl'), b = $('#btnExplain'); if (l) l.textContent = 'Explain line: ' + (exOn ? 'on' : 'off'); if (b) b.setAttribute('aria-pressed', exOn ? 'true' : 'false'); }
+  function exShow() {
+    if (!exOn || !window.CC.explainLine) { exCard.hidden = true; return; }
+    const r = window.CC.explainLine(cm.getLine(cm.getCursor().line), window.CC.lang);
+    if (!r) { exCard.hidden = false; exCard.firstChild.textContent = ''; exCard.children[1].textContent = window.CC.lang === 'hi' ? 'Yeh line khaali hai.' : 'This line is empty.'; return; }
+    exCard.hidden = false; exCard.firstChild.textContent = r.title; exCard.children[1].textContent = r.text;
+  }
+  function exSet(on) { exOn = on; LS.set('cs.explain', on); exLabel(); exShow(); }
+  exCard.lastChild.addEventListener('click', () => exSet(false));
+  const be = $('#btnExplain'); if (be) be.addEventListener('click', () => exSet(!exOn));
+  cm.on('cursorActivity', () => { if (!exOn) return; clearTimeout(exT); exT = setTimeout(exShow, 120); });
+  exLabel(); setTimeout(exShow, 0);
   // ---- live check: compile (never run) shortly after typing stops, so problems and Fix it buttons appear without pressing Run ----
   let live = LS.get('cs.live', true), liveT = 0, liveId = 0;
   function liveLabel() { const l = $('#liveLbl'), b = $('#btnLive'); if (l) l.textContent = 'Live check: ' + (live ? 'on' : 'off'); if (b) b.setAttribute('aria-pressed', live ? 'true' : 'false'); }

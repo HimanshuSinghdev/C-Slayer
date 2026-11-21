@@ -1,5 +1,6 @@
 # Changelog
 
+- 2026-11-22: Explain line — a card that explains the line under the cursor in plain English or Hinglish (menu switch).
 - 2026-11-22: live check — problems and Fix it buttons appear while typing (menu switch: Live check).
 - 2026-11-22: "Fix it" buttons in Problems (missing ;, #include, scanf &, printf %d/%lld/%f, void main, gets, = vs ==, unused variable, misspelled function), each tested by recompiling.
 - 2026-11-21: the credit signature writes itself letter by letter in a loop (part of the animation switch).
