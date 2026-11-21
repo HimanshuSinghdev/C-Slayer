@@ -76,3 +76,5 @@ Upload the folder to a GitHub repo → Settings → Pages → branch `main`, roo
 
 ## Fix it
 `js/cc/fixit.js` turns the compiler's own messages into one-tap fixes shown in the Problems tab (preview of the changed line, Ctrl+Z to undo). Rules only, no guessing: missing `;`, missing `#include`, `scanf` without `&`, wrong `printf` conversion, `void main`, `gets`, `=` vs `==`, unused variable, misspelled library function. `node tests/fixit.js` applies every suggestion and recompiles to prove the problem is gone. To remove it: delete the file, its `<script>` line, and the `fixit` block in `renderProblems` in `js/app.js`.
+
+**Live check:** about a second after you stop typing, the code is compiled (never run) in the worker and the Problems tab and Fix it buttons update. Switch it off in the menu (Live check: on/off); the code is in `scheduleLive` in `js/app.js` and the `check` message in `js/worker.js`.

@@ -310,6 +310,21 @@
 
   // ---------------- problems ----------------
   let lastErrors = null;
+  // ---- live check: compile (never run) shortly after typing stops, so problems and Fix it buttons appear without pressing Run ----
+  let live = LS.get('cs.live', true), liveT = 0, liveId = 0;
+  function liveLabel() { const l = $('#liveLbl'), b = $('#btnLive'); if (l) l.textContent = 'Live check: ' + (live ? 'on' : 'off'); if (b) b.setAttribute('aria-pressed', live ? 'true' : 'false'); }
+  const bl = $('#btnLive'); if (bl) bl.addEventListener('click', () => { live = !live; LS.set('cs.live', live); liveLabel(); clearTimeout(liveT); if (live) scheduleLive(300); });
+  liveLabel();
+  function scheduleLive(ms) {
+    clearTimeout(liveT);
+    if (!live) return;
+    liveT = setTimeout(() => {
+      const st = document.body.dataset.state;
+      if (debugging || st === 'running' || st === 'waiting' || !worker) return;
+      liveId++; worker.postMessage({ type: 'check', cid: liveId, src: cm.getValue(), files: otherFiles() });
+    }, ms || 900);
+  }
+  cm.on('change', () => scheduleLive());
   let fixStale = false;       // the code changed since these problems were found, so their Fix it buttons would point at the wrong place
   cm.on('change', () => { if (!fixStale && lastErrors && lastErrors.length) { fixStale = true; document.querySelectorAll('#probList .fixit').forEach(n => n.remove()); } });
   function renderProblems(errors, keepStale) {
@@ -388,6 +403,7 @@
   function onMsg(m) {
     if (m.type === 'ready' || (m.id !== undefined && m.id !== runId && m.type !== 'score-result')) return;
     switch (m.type) {
+      case 'check-result': if (m.cid === liveId && !debugging && document.body.dataset.state !== 'running') { renderProblems(m.errors); markLines(m.errors); } break;
       case 'diag': renderProblems(m.errors); markLines(m.errors);
         if (!m.ok) { setState('error'); showTab('problems'); } break;
       case 'out': put(String(m.s), m.fd === 2 ? 'e' : ''); break;

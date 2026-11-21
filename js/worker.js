@@ -245,6 +245,9 @@ self.onmessage = (ev) => {
     }
   } else if (m.type === 'setbp') { if (session && session.vm.dbg) session.vm.dbg.bp = new Set((m.breakpoints || []).slice(0, 200).map(x => x | 0)); }
   else if (m.type === 'run') handleRun(m).catch(e => postMessage({ type: 'fatal', id: m.id, message: String(e && e.message || e) }));
+  else if (m.type === 'check') {          // live problems while typing: compile only, never runs anything
+    try { const c = CC.compile(String(m.src || '').slice(0, 400000), { userFiles: userFilesOf(m) }); postMessage({ type: 'check-result', cid: m.cid, ok: c.ok, errors: plainErrors(c.errors) }); } catch (e) { /* ignore, the next Run reports it */ }
+  }
   else if (m.type === 'stdin') handleStdin(m);
   else if (m.type === 'stop') { if (session && session.id === m.id) { session.stopped = true; if (session.wake) session.wake(); if (session.resume) session.resume(); postMessage({ type: 'end', id: m.id, compiled: true, status: 'stopped', exit: null, error: null, leaks: [] }); session = null; } }
   else if (m.type === 'score') handleScore(m).catch(e => postMessage({ type: 'fatal', id: m.id, message: String(e && e.message || e) }));
