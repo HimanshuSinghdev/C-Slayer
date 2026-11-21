@@ -310,7 +310,10 @@
 
   // ---------------- problems ----------------
   let lastErrors = null;
-  function renderProblems(errors) {
+  let fixStale = false;       // the code changed since these problems were found, so their Fix it buttons would point at the wrong place
+  cm.on('change', () => { if (!fixStale && lastErrors && lastErrors.length) { fixStale = true; document.querySelectorAll('#probList .fixit').forEach(n => n.remove()); } });
+  function renderProblems(errors, keepStale) {
+    if (!keepStale) fixStale = false;
     lastErrors = errors;
     const ul = $('#probList'); ul.textContent = '';
     const ne = errors.filter(e => e.sev === 'error').length, nw = errors.filter(e => e.sev === 'warning').length;
@@ -326,6 +329,25 @@
       if (ex) {
         const w = document.createElement('div'); w.className = 'why'; w.textContent = ex.why; body.appendChild(w);
         if (ex.fix) { const f = document.createElement('div'); f.className = 'fix'; f.textContent = '→ ' + ex.fix; body.appendChild(f); }
+      }
+      const fx = e.sev === 'note' || fixStale || !window.CC.fixit ? null : window.CC.fixit.suggest(cm.getValue(), e);
+      if (fx) {
+        const row = document.createElement('div'); row.className = 'fixit';
+        const old = cm.getValue(), next = window.CC.fixit.apply(old, fx.edits), ol = old.split('\n'), nl = next.split('\n');
+        const shown = fx.edits.find(x => x.line > 0), dif = document.createElement('div'); dif.className = 'diff';
+        if (shown && nl.length === ol.length) { const o = document.createElement('div'); o.className = 'o'; o.textContent = '- ' + ol[shown.line - 1].trim(); const n = document.createElement('div'); n.className = 'n'; n.textContent = '+ ' + nl[shown.line - 1].trim(); dif.append(o, n); }
+        else if (shown) { const o = document.createElement('div'); o.className = 'o'; o.textContent = '- ' + ol[shown.line - 1].trim() + '  (line removed)'; dif.append(o); }
+        else { const n = document.createElement('div'); n.className = 'n'; n.textContent = '+ ' + fx.edits[0].text.trim(); dif.append(n); }
+        const bt = document.createElement('button'); bt.type = 'button'; bt.textContent = 'Fix it: ' + fx.title; bt.title = fx.why;
+        bt.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const cur = cm.getValue(), res = window.CC.fixit.apply(cur, fx.edits), sc = cm.getScrollInfo();
+          if (res === cur) return toast('Nothing to change');
+          cm.operation(() => cm.replaceRange(res, { line: 0, ch: 0 }, { line: cm.lineCount() - 1, ch: cm.getLine(cm.lineCount() - 1).length }));
+          cm.scrollTo(sc.left, sc.top); cm.focus(); toast('Fixed: ' + fx.title + ' (Ctrl+Z to undo)');
+        });
+        const why = document.createElement('div'); why.className = 'why'; why.textContent = fx.why;
+        row.append(bt, dif); body.appendChild(row);
       }
       li.append(ln, sv, body);
       li.addEventListener('click', () => { if (e.line > 0) { cm.focus(); cm.setCursor(Math.min(e.line, cm.lineCount()) - 1, 0); cm.scrollIntoView({ line: e.line - 1, ch: 0 }, 80); } });

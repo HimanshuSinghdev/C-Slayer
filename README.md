@@ -73,3 +73,6 @@ Upload the folder to a GitHub repo → Settings → Pages → branch `main`, roo
 
 ## Develop
 `node tests/diff.js` compares output with real `gcc` on `tests/corpus/*.c`; `node tests/rt.js` checks runtime-error detection; `node tests/fuzz.js` runs the fuzzers; `node tests/scoring.js` checks the score bands; `node tests/hindi.js` checks every score note has a Hinglish line; `node tests/problems.js` grades the practice problems with gcc-made expected outputs; `node tests/format.js` proves the formatter keeps behaviour and is idempotent.
+
+## Fix it
+`js/cc/fixit.js` turns the compiler's own messages into one-tap fixes shown in the Problems tab (preview of the changed line, Ctrl+Z to undo). Rules only, no guessing: missing `;`, missing `#include`, `scanf` without `&`, wrong `printf` conversion, `void main`, `gets`, `=` vs `==`, unused variable, misspelled library function. `node tests/fixit.js` applies every suggestion and recompiles to prove the problem is gone. To remove it: delete the file, its `<script>` line, and the `fixit` block in `renderProblems` in `js/app.js`.
