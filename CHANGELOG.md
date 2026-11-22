@@ -1,5 +1,6 @@
 # Changelog
 
+- 2026-11-23: printf/%a — hexadecimal floats (%a, %A, precision, rounding, subnormals) now print exactly like gcc.
 - 2026-11-23: Progress — XP, levels (Rookie → Legend) and a daily streak on the grade card; only improving a program earns XP (menu switch: Progress).
 - 2026-11-23: bug sweep — 500 more fuzz programs clean; Fix it no longer offers to delete an unused variable whose initializer calls a function; interactive-input end-to-end test; phone checklist updated.
 - 2026-11-22: Explain line — a card that explains the line under the cursor in plain English or Hinglish (menu switch).

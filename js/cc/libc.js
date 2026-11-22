@@ -72,6 +72,25 @@
     return { digits: '0'.repeat(p + 1), exp: X };
   }
   function expStr(X, upper) { return (upper ? 'E' : 'e') + (X < 0 ? '-' : '+') + String(Math.abs(X)).padStart(2, '0'); }
+  function hexFloat(ax, prec, flags, upper) {
+    f64.setFloat64(0, ax);
+    const hi = f64.getUint32(0), lo = f64.getUint32(4);
+    let e = (hi >>> 20) & 0x7ff, m = (BigInt(hi & 0xfffff) << 32n) | BigInt(lo), lead = 1n;
+    if (e === 0) { lead = 0n; e = m === 0n ? 0 : -1022; } else e -= 1023;
+    if (lead === 0n && m === 0n) e = 0;
+    if (prec !== null && prec < 13) {                      // round to nearest even at the requested digit
+      const drop = BigInt(4 * (13 - prec)), full = (lead << 52n) | m, rem = full & ((1n << drop) - 1n), half = 1n << (drop - 1n);
+      let q = full >> drop;
+      if (rem > half || (rem === half && (q & 1n))) q += 1n;
+      full === 0n || (lead = q >> BigInt(4 * prec));
+      m = q & ((1n << BigInt(4 * prec)) - 1n); m <<= drop;
+      if (prec === 0) { lead = q; m = 0n; }
+    }
+    let frac = m.toString(16).padStart(13, '0');
+    if (prec === null) frac = frac.replace(/0+$/, ''); else frac = frac.slice(0, prec).padEnd(prec, '0');
+    let body = lead.toString(16) + (frac || flags.hash ? '.' + frac : '') + 'p' + (e < 0 ? '-' : '+') + Math.abs(e);
+    return upper ? body.toUpperCase() : body;
+  }
   function fmtFloat(x, conv, prec, flags) {
     const upper = conv === 'E' || conv === 'G' || conv === 'F' || conv === 'A';
     let neg = x < 0 || Object.is(x, -0);
@@ -101,8 +120,8 @@
         if (!flags.hash && mant.indexOf('.') >= 0) mant = mant.replace(/0+$/, '').replace(/\.$/, '');
         body = mant + expStr(exp, upper);
       }
-    } else { // %a: rarely used; fall back to a simple hex float
-      body = ax.toString(16);
+    } else { // %a: hexadecimal float, same digits as glibc (0x1.8p+1)
+      return { body: hexFloat(ax, prec, flags, upper), prefix: upper ? '0X' : '0x', neg, special: false };
     }
     return { body, neg, special: false };
   }
@@ -182,7 +201,7 @@
           const r = fmtFloat(x, conv, prec, flags);
           numeric = true;
           sign = r.neg ? '-' : flags.plus ? '+' : flags.space ? ' ' : '';
-          body = r.body;
+          body = r.body; if (r.prefix) prefix = r.prefix;
           if (r.special) flags.zero = false;
           break;
         }
