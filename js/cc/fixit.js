@@ -124,7 +124,7 @@
 
     // 6. unused variable: remove a plain declaration line
     if ((m = /^unused variable '(\w+)'/.exec(msg))) {
-      const re = new RegExp('^\\s*(?:const\\s+)?(?:unsigned\\s+|signed\\s+)?(?:long\\s+long|long|short|int|char|float|double)\\s+' + m[1] + '\\s*(?:=[^;,]*)?;\\s*(?://.*)?$');
+      const re = new RegExp('^\\s*(?:const\\s+)?(?:unsigned\\s+|signed\\s+)?(?:long\\s+long|long|short|int|char|float|double)\\s+' + m[1] + '\\s*(?:=[^;,()]*)?;\\s*(?://.*)?$');
       let ln = L; if (!re.test(lineText(lines, ln))) { ln = 0; for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) { ln = i + 1; break; } }
       if (ln) return { title: 'Remove unused ' + m[1], why: 'The variable "' + m[1] + '" is declared but never used, so it can be deleted.', edits: [{ line: ln, from: 0, to: lines[ln - 1].length + 1, text: '' }] };
     }

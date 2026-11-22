@@ -1,5 +1,6 @@
 # Changelog
 
+- 2026-11-23: bug sweep — 500 more fuzz programs clean; Fix it no longer offers to delete an unused variable whose initializer calls a function; interactive-input end-to-end test; phone checklist updated.
 - 2026-11-22: Explain line — a card that explains the line under the cursor in plain English or Hinglish (menu switch).
 - 2026-11-22: live check — problems and Fix it buttons appear while typing (menu switch: Live check).
 - 2026-11-22: "Fix it" buttons in Problems (missing ;, #include, scanf &, printf %d/%lld/%f, void main, gets, = vs ==, unused variable, misspelled function), each tested by recompiling.

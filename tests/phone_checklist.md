@@ -14,3 +14,10 @@ Open the site, then tick each line. Send me a screenshot or one line for anythin
 10. Offline: turn on airplane mode, close and reopen the app from the icon. It still runs code.
 11. Update: after I push, open the app twice. The new version appears without clearing data.
 12. Rotate to landscape: nothing overlaps.
+
+## Added 22 Nov (new features)
+13. Type `int x = 5` (no `;`) and stop for a second: a red problem and **Fix it: Add the missing ;** should appear in Problems without pressing Run. Tap it: the `;` appears, the button disappears.
+14. Menu → **Explain line: on**. Tap different lines: the card above the symbol keys changes. Switch Hinglish: the card turns Hinglish. Tap × to close.
+15. Menu → **Live check: off**. Type a mistake: nothing is checked until you press Run. Switch it back on.
+16. Watch the "by Himanshu Singh" under the logo: the letters write themselves, hold, fade and start again. Menu → animations off: the name stays still.
+17. Run a program that squares 50000 as `int`: after the output there is a ⚠ overflow note.
