@@ -80,3 +80,6 @@ Upload the folder to a GitHub repo → Settings → Pages → branch `main`, roo
 **Live check:** about a second after you stop typing, the code is compiled (never run) in the worker and the Problems tab and Fix it buttons update. Switch it off in the menu (Live check: on/off); the code is in `scheduleLive` in `js/app.js` and the `check` message in `js/worker.js`.
 
 **Explain line:** menu → Explain line turns on a card above the symbol keys that explains the line under the cursor (declarations, printf/scanf formats, loops, if/else, functions, pointers, arrays…) in English or Hinglish. Rules only, in `js/cc/lineexplain.js`; remove the file, its `<script>` and the Explain block in `js/app.js` to drop it.
+
+## Progress (XP, levels, streak)
+After Grade, a small card shows your level, XP bar and day streak. XP = 10 per point of score you improve on a program; grading the same code again earns nothing. Stored only on this device; switch off in the menu (Progress).

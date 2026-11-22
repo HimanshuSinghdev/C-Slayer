@@ -310,6 +310,11 @@
 
   // ---------------- problems ----------------
   let lastErrors = null;
+  // ---- progress: XP / level / streak after a grade (menu switch) ----
+  let xpOn = LS.get('cs.xpon', true);
+  function xpLabel() { const l = $('#xpLbl'), b = $('#btnXp'); if (l) l.textContent = 'Progress: ' + (xpOn ? 'on' : 'off'); if (b) b.setAttribute('aria-pressed', xpOn ? 'true' : 'false'); }
+  const bx = $('#btnXp'); if (bx) bx.addEventListener('click', () => { xpOn = !xpOn; LS.set('cs.xpon', xpOn); xpLabel(); });
+  xpLabel();
   // ---- Explain line: a card above the symbol keys that explains the line under the cursor, following it as you move ----
   let exOn = LS.get('cs.explain', false), exT = 0;
   const exCard = document.createElement('div'); exCard.className = 'lcard'; exCard.hidden = true; exCard.setAttribute('aria-live', 'polite');
@@ -518,6 +523,16 @@
     ring.append(svg, num);
     const info = el('div'); info.append(el('h3', '', CC.scoreWord(r.grade)), el('p', '', CC.scoreSummary(r.summary)));
     hero.append(ring, info); wrap.appendChild(hero);
+    if (xpOn && CC.xp) {
+      const a = CC.xp.award(r.score, cm.getValue()), L = a.level, hi = CC.lang === 'hi';
+      const xp = el('div', 'xp' + (a.level.n > a.prevLevel ? ' up' : '')), top = el('div', 'top');
+      const lv = el('span', 'lv', 'Level ' + L.n + ' · ' + L.name); const gain = el('span', '', a.gained ? '+' + a.gained + ' XP' : (hi ? 'Is code se aur XP nahi' : 'No new XP for this code'));
+      top.append(lv, gain); xp.appendChild(top);
+      const bar = el('div', 'bar'), fill = document.createElement('i'); bar.appendChild(fill); xp.appendChild(bar);
+      const sub = el('div', 'sub', (L.hi === null ? 'Max level!' : (L.hi - a.xp) + (hi ? ' XP aur agle level tak' : ' XP to the next level')) + (a.streak > 1 ? '  ·  🔥 ' + a.streak + (hi ? ' din ki streak' : '-day streak') : ''));
+      xp.appendChild(sub); if (a.level.n > a.prevLevel) sub.textContent = (hi ? 'Naya level! ' : 'Level up! ') + sub.textContent;
+      wrap.appendChild(xp); requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = L.pct + '%'; }));
+    }
     if (r.tips && r.tips.length) {
       const tp = el('div', 'part tips'); tp.appendChild(el('div', 'hd', CC.scoreWord('Quick wins — points you can win back')));
       const ul = document.createElement('ul');
