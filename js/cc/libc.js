@@ -577,6 +577,31 @@
   def('exit', (vm, a) => { throw new CC.ExitSignal(a[0] | 0); });
   def('_Exit', (vm, a) => { throw new CC.ExitSignal(a[0] | 0); });
   def('abort', (vm) => { vm.emit(2, ASCII('Aborted\n')); vm.fail('abort', 'The program called abort()'); });
+  // setjmp/longjmp: the VM keeps a snapshot of its call stack; the jmp_buf only holds the snapshot's number
+  def('setjmp', (vm, a) => {
+    const p = num(a[0]); vm.chk(p, 8, true);
+    if (!vm.jmps) { vm.jmps = new Map(); vm.jmpN = 0; }
+    const id = ++vm.jmpN; if (vm.jmps.size >= 4096) vm.jmps.delete(vm.jmps.keys().next().value);
+    vm.jmps.set(id, { pc: vm.pc, ssp: vm.ssp - 1, fp: vm.fp, sp: vm.sp, fn: vm.curFn, n: vm.frames.length, top: vm.frames[vm.frames.length - 1] });
+    vm.dv.setBigInt64(p, BigInt(id) | 0x4A4D500000000000n, true);   // tag 'JMP' so a wild buffer is noticed
+    return 0;
+  });
+  def('longjmp', (vm, a) => {
+    const p = num(a[0]); vm.chk(p, 8, false);
+    const raw = vm.dv.getBigInt64(p, true), id = Number(raw & 0xFFFFFFFFn), s = (raw & ~0xFFFFFFFFn) === 0x4A4D500000000000n && vm.jmps ? vm.jmps.get(id) : undefined;
+    if (!s) vm.fail('badjmp', 'longjmp() was given a jmp_buf that setjmp() never filled in');
+    const fr = vm.frames, n = fr.length;
+    // the function that called setjmp must still be running (jumping into a finished function is undefined behaviour in C)
+    const alive = n >= s.n && (n === s.n ? (vm.fp === s.fp && vm.curFn === s.fn) : (fr[s.n] && fr[s.n].fp === s.fp && fr[s.n].fn === s.fn)) && (s.n === 0 || fr[s.n - 1] === s.top);
+    if (!alive) vm.fail('badjmp', 'longjmp() jumped to a function that has already returned (the jmp_buf is stale)');
+    const poison = vm.poison;
+    const clear = (fnIdx, fp) => { const f = vm.funcs[fnIdx]; if (f && f.redzones && f.redzones.length) poison.fill(0, fp, fp + f.frameSize); };
+    if (n > s.n) { clear(vm.curFn, vm.fp); for (let i = n - 1; i > s.n; i--) clear(fr[i].fn, fr[i].fp); }
+    fr.length = s.n;
+    let v = num(a[1]) | 0; if (v === 0) v = 1;
+    vm.pc = s.pc; vm.fp = s.fp; vm.sp = s.sp; vm.curFn = s.fn; vm.ssp = s.ssp; vm.S[vm.ssp++] = v;
+    return CC.JUMP;
+  });
   def('atexit', (vm, a) => {
     const f = num(a[0]); if (f < CC.MEM.FUNC_BASE || (f - CC.MEM.FUNC_BASE) % CC.MEM.FUNC_STRIDE !== 0 || !vm.funcs[(f - CC.MEM.FUNC_BASE) / CC.MEM.FUNC_STRIDE]) return 1;
     if (vm.atexitQ.length >= 32) return 1; vm.atexitQ.push(f); return 0;

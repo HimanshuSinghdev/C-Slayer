@@ -21,8 +21,14 @@
   // builtins that may wait for interactive input: programs using them run on the VM unless stdin is preloaded
   const INPUT_BUILTINS = new Set(['scanf', 'fscanf', 'getchar', 'getc', 'fgetc', 'fgets', 'fread', 'getline', 'gets', 'getdelim', 'read', 'scanf_s', 'vscanf', 'vfscanf', 'fgetws', 'getwchar', 'sleep', 'usleep']);
 
+  // builtins that rewind the VM's call stack: only the VM can do that
+  const VM_ONLY = new Set(['setjmp', 'longjmp']);
   function usesInput(prog) {
     for (const b of prog.builtins) if (b && INPUT_BUILTINS.has(b.name)) return true;
+    return false;
+  }
+  function usesVmOnly(prog) {
+    for (const b of prog.builtins) if (b && VM_ONLY.has(b.name)) return true;
     return false;
   }
 
@@ -546,6 +552,7 @@
   /** Build the translated program for a VM. Throws Unsupported if anything is outside what Turbo understands. */
   function build(vm, hooks) {
     const prog = vm.prog, code = prog.code, consts = prog.consts, funcs = prog.funcs;
+    if (usesVmOnly(prog)) un('setjmp/longjmp run on the VM');
     // function extents
     const entries = [];
     funcs.forEach((f, i) => { if (f && typeof f.entry === 'number') entries.push({ i, pc: f.entry }); });

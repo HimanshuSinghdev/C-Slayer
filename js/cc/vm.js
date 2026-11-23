@@ -10,6 +10,7 @@
   const OP = CC.OP;
   const MEM = CC.MEM;
 
+  const JUMP = { jump: true };            // builtin result: "I moved pc/fp/sp/ssp myself" (longjmp)
   const WAIT = { wait: true };            // builtin result: "need more stdin, call me again"
   class RunError extends Error {
     constructor(kind, msg, extra) { super(msg); this.kind = kind; this.extra = extra || null; }
@@ -680,6 +681,7 @@
             save();
             const r = bf.fn(this, args);
             if (r === WAIT) { this.pc = pc - 3; return 'wait'; }
+            if (r === JUMP) { pc = this.pc; ssp = this.ssp; fp = this.fp; sp = this.sp; break; }
             ssp -= argc; S[ssp++] = r === undefined ? 0 : r;
             this.ssp = ssp;
             sp = this.sp; // builtins never move sp
@@ -752,7 +754,7 @@
     }
   }
 
-  CC.VM = VM; CC.RunError = RunError; CC.ExitSignal = ExitSignal; CC.WAIT = WAIT;
+  CC.VM = VM; CC.RunError = RunError; CC.ExitSignal = ExitSignal; CC.WAIT = WAIT; CC.JUMP = JUMP;
   CC.VMH = { conv, ld64, st64, nI, nU, big, wrapL, wrapUL, f2i, f2u, SAFE, I32_MIN, I64_MIN, P_STACK, WAIT, ExitSignal, RunError };
   CC.VMLIMITS = { HEAP_BYTES, STACK_BYTES, OUT_LIMIT };
 })(typeof globalThis !== 'undefined' ? globalThis : self);

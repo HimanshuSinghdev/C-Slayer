@@ -320,6 +320,15 @@ unsigned int sleep(unsigned int seconds);
 int usleep(unsigned int usec);
 #endif`;
 
+  H['setjmp.h'] = `
+#ifndef _SETJMP_H
+#define _SETJMP_H
+typedef long jmp_buf[4];
+typedef long sigjmp_buf[4];
+int setjmp(jmp_buf env);
+void longjmp(jmp_buf env, int val) __attribute__((noreturn));
+#endif`;
+
   H['conio.h'] = `
 #ifndef _CONIO_H
 #define _CONIO_H
